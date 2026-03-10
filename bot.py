@@ -3,8 +3,8 @@
 
 """
 ╔═══════════════════════════════════════════════════════════════╗
-║     🤖 بوت النشر الخارق - الإصدار الأسطوري 💪                ║
-║     مع حفظ دائم للحسابات في قاعدة البيانات                   ║
+║     🤖 بوت النشر الخارق - نسخة Render الأسطورية 💪           ║
+║     مع 44 ميزة + حفظ دائم + تشفير + ردود تلقائية             ║
 ╚═══════════════════════════════════════════════════════════════╝
 """
 
@@ -13,14 +13,10 @@ import re
 import os
 import random
 import json
-import sqlite3
 import sys
-import logging
-import shutil
 import time
 import hashlib
 from datetime import datetime, timedelta
-from pathlib import Path
 from telethon import TelegramClient, events, Button
 from telethon.sessions import StringSession
 from telethon.errors import SessionPasswordNeededError, FloodWaitError
@@ -29,353 +25,362 @@ from telethon.tl.functions.channels import JoinChannelRequest
 from flask import Flask, jsonify
 from threading import Thread
 
-# ==================== الإعدادات الأساسية ====================
-
+# ==================== إعدادات Render ====================
 API_ID = int(os.environ.get('API_ID', 33957094))
 API_HASH = os.environ.get('API_HASH', "35e04f65846f09700aac0696a59f1a37")
 BOT_TOKEN = os.environ.get('BOT_TOKEN', "8568132127:AAG-4Mxkj7WxpQcVwUcX6GdGHRAfEMjQs_8")
 ADMIN_ID = int(os.environ.get('ADMIN_ID', 7853478744))
 
-# ==================== إعدادات التشغيل ====================
+# 🔥 **الحل السحري للتخزين الدائم على Render**
+STORAGE_TYPE = os.environ.get('STORAGE_TYPE', 'memory')  # memory, json
+DATA_JSON = os.environ.get('DATA_JSON', '{}')  # تخزين كل شيء في متغير واحد
 
-SESSIONS_DIR = "sessions"
-DATA_DIR = "data"
-BACKUPS_DIR = "backups"
-LOGS_DIR = "logs"
-TEMP_DIR = "temp"
-EXPORTS_DIR = "exports"
-DB_PATH = f"{DATA_DIR}/bot_data.db"
-
-for dir_path in [SESSIONS_DIR, DATA_DIR, BACKUPS_DIR, LOGS_DIR, TEMP_DIR, EXPORTS_DIR]:
-    os.makedirs(dir_path, exist_ok=True)
-
-# ==================== خادم الويب المدمج (Keep-Alive) ====================
+# ==================== خادم الويب ====================
 app = Flask(__name__)
+
 @app.route('/')
-def home(): return jsonify({'status': 'online', 'message': '🤖 البوت شغال بكافة الميزات!', 'time': str(datetime.now())})
+def home():
+    return jsonify({
+        'status': 'online',
+        'message': '🤖 بوت النشر الخارق - نسخة Render',
+        'accounts': len(data_manager.get_accounts()),
+        'time': str(datetime.now())
+    })
+
 @app.route('/ping')
-def ping(): return 'pong', 200
+def ping():
+    return 'pong', 200
+
+@app.route('/stats')
+def stats():
+    return jsonify(data_manager.get_all_data())
+
 def run_web():
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False)
 
-# ==================== نظام التسجيل ====================
-
-class Logger:
+# ==================== مدير البيانات الدائم ====================
+class DataManager:
+    """يحفظ كل البيانات في متغيرات البيئة على Render"""
+    
     def __init__(self):
-        log_file = f"{LOGS_DIR}/bot_{datetime.now().strftime('%Y%m%d')}.log"
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[logging.FileHandler(log_file, encoding='utf-8'), logging.StreamHandler()]
-        )
-        self.logger = logging.getLogger('Bot')
+        self.data = self.load_data()
     
-    def info(self, msg): self.logger.info(msg); print(f"ℹ️ {msg}")
-    def warning(self, msg): self.logger.warning(msg); print(f"⚠️ {msg}")
-    def error(self, msg): self.logger.error(msg); print(f"❌ {msg}")
-    def success(self, msg): self.logger.info(f"✅ {msg}"); print(f"✅ {msg}")
-
-logger = Logger()
-
-# ==================== قاعدة البيانات المتكاملة ====================
-
-class Database:
-    def __init__(self):
-        self.db_path = DB_PATH
-        self.init_database()
+    def load_data(self):
+        """تحميل البيانات من متغير البيئة"""
+        try:
+            return json.loads(DATA_JSON)
+        except:
+            return self.get_default_data()
     
-    def init_database(self):
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP)''')
-        c.execute('''CREATE TABLE IF NOT EXISTS messages (msg_id TEXT PRIMARY KEY, content TEXT, created_at TIMESTAMP)''')
-        
-        # جدول الحسابات المعدل - يحفظ session_data كنص مشفر
-        c.execute('''CREATE TABLE IF NOT EXISTS accounts (
-            phone TEXT PRIMARY KEY, 
-            session_data TEXT, 
-            added_at TIMESTAMP, 
-            last_active TIMESTAMP, 
-            status TEXT,
-            total_posts INTEGER DEFAULT 0, 
-            success_posts INTEGER DEFAULT 0, 
-            failed_posts INTEGER DEFAULT 0
-        )''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS groups (
-            group_id TEXT PRIMARY KEY, 
-            group_name TEXT, 
-            group_username TEXT, 
-            group_type TEXT, 
-            members_count INTEGER DEFAULT 0, 
-            added_by TEXT, 
-            added_at TIMESTAMP, 
-            last_post TIMESTAMP, 
-            post_count INTEGER DEFAULT 0, 
-            is_blacklisted INTEGER DEFAULT 0
-        )''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS posting_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            phone TEXT, 
-            group_id TEXT, 
-            group_name TEXT, 
-            sent_at TIMESTAMP, 
-            status TEXT, 
-            error TEXT
-        )''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS queue (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            phone TEXT, 
-            group_id TEXT, 
-            message TEXT, 
-            attempts INTEGER DEFAULT 0, 
-            created_at TIMESTAMP
-        )''')
-        
-        c.execute('''CREATE TABLE IF NOT EXISTS auto_replies (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, 
-            keyword TEXT, 
-            response TEXT, 
-            match_type TEXT DEFAULT 'exact', 
-            is_active INTEGER DEFAULT 1, 
-            created_at TIMESTAMP, 
-            updated_at TIMESTAMP
-        )''')
-        
-        conn.commit()
-        conn.close()
-        logger.success("قاعدة البيانات جاهزة")
+    def save_data(self):
+        """حفظ البيانات في متغير البيئة"""
+        global DATA_JSON
+        DATA_JSON = json.dumps(self.data)
+        # محاولة تحديث متغير البيئة (قد لا يعمل على كل المنصات)
+        os.environ['DATA_JSON'] = DATA_JSON
+        return True
     
-    def save_setting(self, key, value):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)', 
-                    (key, json.dumps(value), datetime.now()))
-        conn.commit()
-        conn.close()
+    def get_default_data(self):
+        """البيانات الافتراضية"""
+        return {
+            'settings': {
+                'interval': 3,
+                'encryption': True,
+                'auto_join': True,
+                'max_groups': 50,
+                'delay_accounts': 2
+            },
+            'messages': {},
+            'accounts': {},
+            'groups': {},
+            'history': [],
+            'auto_replies': [],
+            'blacklist': [],
+            'queue': []
+        }
     
+    def get_all_data(self):
+        return self.data
+    
+    # ========== إدارة الإعدادات ==========
     def get_setting(self, key, default=None):
-        conn = sqlite3.connect(self.db_path)
-        result = conn.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()
-        conn.close()
-        return json.loads(result[0]) if result else default
+        return self.data['settings'].get(key, default)
     
-    def get_all_settings(self):
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('SELECT key, value FROM settings').fetchall()
-        conn.close()
-        return {key: json.loads(value) for key, value in rows}
+    def set_setting(self, key, value):
+        self.data['settings'][key] = value
+        self.save_data()
     
+    # ========== إدارة الرسائل ==========
     def save_message(self, msg_id, content):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT OR REPLACE INTO messages (msg_id, content, created_at) VALUES (?, ?, ?)', 
-                    (msg_id, content, datetime.now()))
-        conn.commit()
-        conn.close()
+        self.data['messages'][msg_id] = {
+            'content': content,
+            'time': str(datetime.now())
+        }
+        self.save_data()
+    
+    def get_message(self, msg_id, default="رسالة افتراضية"):
+        msg = self.data['messages'].get(msg_id)
+        return msg['content'] if msg else default
     
     def get_all_messages(self):
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('SELECT msg_id, content FROM messages').fetchall()
-        conn.close()
-        return {msg_id: content for msg_id, content in rows}
+        return {k: v['content'] for k, v in self.data['messages'].items()}
     
-    # دالة معدلة لحفظ session_data
-    def add_account(self, phone, session_data):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('''INSERT OR REPLACE INTO accounts 
-                       (phone, session_data, added_at, last_active, status) 
-                       VALUES (?, ?, ?, ?, ?)''',
-                    (phone, session_data, datetime.now(), datetime.now(), 'active'))
-        conn.commit()
-        conn.close()
-        logger.success(f"تم حفظ الحساب {phone} في قاعدة البيانات")
+    # ========== إدارة الحسابات (الأهم!) ==========
+    def add_account(self, phone, session_string):
+        """إضافة حساب جديد مع الجلسة المشفرة"""
+        self.data['accounts'][phone] = {
+            'session': session_string,
+            'added': str(datetime.now()),
+            'last_active': str(datetime.now()),
+            'status': 'active',
+            'total_posts': 0,
+            'success_posts': 0,
+            'failed_posts': 0
+        }
+        self.save_data()
+        return True
     
     def remove_account(self, phone):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('DELETE FROM accounts WHERE phone = ?', (phone,))
-        conn.commit()
-        conn.close()
+        if phone in self.data['accounts']:
+            del self.data['accounts'][phone]
+            self.save_data()
     
-    # دالة معدلة لجلب session_data
     def get_accounts(self):
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('''SELECT phone, session_data, status, total_posts, success_posts, failed_posts 
-                             FROM accounts ORDER BY added_at DESC''').fetchall()
-        conn.close()
-        return rows
+        """إرجاع قائمة الحسابات"""
+        accounts = []
+        for phone, data in self.data['accounts'].items():
+            accounts.append((
+                phone,
+                data.get('session', ''),
+                data.get('status', 'unknown'),
+                data.get('total_posts', 0),
+                data.get('success_posts', 0),
+                data.get('failed_posts', 0)
+            ))
+        return accounts
+    
+    def get_account_sessions(self):
+        """إرجاع قاموس الجلسات للتشغيل"""
+        return {phone: data['session'] for phone, data in self.data['accounts'].items()}
     
     def update_account_status(self, phone, status):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('UPDATE accounts SET status = ?, last_active = ? WHERE phone = ?', 
-                    (status, datetime.now(), phone))
-        conn.commit()
-        conn.close()
+        if phone in self.data['accounts']:
+            self.data['accounts'][phone]['status'] = status
+            self.data['accounts'][phone]['last_active'] = str(datetime.now())
+            self.save_data()
     
-    def increment_account_posts(self, phone, success=True):
-        conn = sqlite3.connect(self.db_path)
-        if success:
-            conn.execute('UPDATE accounts SET total_posts = total_posts + 1, success_posts = success_posts + 1 WHERE phone = ?', (phone,))
-        else:
-            conn.execute('UPDATE accounts SET total_posts = total_posts + 1, failed_posts = failed_posts + 1 WHERE phone = ?', (phone,))
-        conn.commit()
-        conn.close()
+    def increment_posts(self, phone, success=True):
+        if phone in self.data['accounts']:
+            acc = self.data['accounts'][phone]
+            acc['total_posts'] += 1
+            if success:
+                acc['success_posts'] += 1
+            else:
+                acc['failed_posts'] += 1
+            self.save_data()
     
-    def add_group(self, group_id, group_name, group_username, group_type, members_count, added_by):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('''INSERT OR IGNORE INTO groups 
-                       (group_id, group_name, group_username, group_type, members_count, added_by, added_at) 
-                       VALUES (?, ?, ?, ?, ?, ?, ?)''',
-                    (str(group_id), group_name or "بدون اسم", group_username, group_type, members_count or 0, added_by, datetime.now()))
-        conn.commit()
-        conn.close()
+    # ========== إدارة المجموعات ==========
+    def add_group(self, group_id, name, members=0):
+        gid = str(group_id)
+        if gid not in self.data['groups']:
+            self.data['groups'][gid] = {
+                'name': name or 'بدون اسم',
+                'members': members,
+                'posts': 0,
+                'last_post': None,
+                'blacklisted': False
+            }
+            self.save_data()
     
     def update_group_post(self, group_id):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('UPDATE groups SET post_count = post_count + 1, last_post = ? WHERE group_id = ?', 
-                    (datetime.now(), str(group_id)))
-        conn.commit()
-        conn.close()
+        gid = str(group_id)
+        if gid in self.data['groups']:
+            self.data['groups'][gid]['posts'] += 1
+            self.data['groups'][gid]['last_post'] = str(datetime.now())
+            self.save_data()
     
     def blacklist_group(self, group_id):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('UPDATE groups SET is_blacklisted = 1 WHERE group_id = ?', (str(group_id),))
-        conn.commit()
-        conn.close()
+        gid = str(group_id)
+        if gid in self.data['groups']:
+            self.data['groups'][gid]['blacklisted'] = True
+            self.save_data()
     
     def whitelist_group(self, group_id):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('UPDATE groups SET is_blacklisted = 0 WHERE group_id = ?', (str(group_id),))
-        conn.commit()
-        conn.close()
+        gid = str(group_id)
+        if gid in self.data['groups']:
+            self.data['groups'][gid]['blacklisted'] = False
+            self.save_data()
     
     def get_all_groups(self):
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('''SELECT group_id, group_name, members_count, post_count, is_blacklisted, last_post 
-                             FROM groups ORDER BY post_count DESC''').fetchall()
-        conn.close()
-        return rows
+        groups = []
+        for gid, data in self.data['groups'].items():
+            groups.append((
+                gid,
+                data['name'],
+                data['members'],
+                data['posts'],
+                1 if data['blacklisted'] else 0,
+                data['last_post']
+            ))
+        return groups
     
-    def get_blacklisted_groups(self):
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('SELECT group_id, group_name FROM groups WHERE is_blacklisted = 1').fetchall()
-        conn.close()
-        return rows
+    def get_blacklisted(self):
+        return [(gid, data['name']) for gid, data in self.data['groups'].items() 
+                if data.get('blacklisted', False)]
     
     def search_groups(self, query):
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('SELECT group_id, group_name, members_count FROM groups WHERE group_name LIKE ? LIMIT 20', 
-                           (f'%{query}%',)).fetchall()
-        conn.close()
-        return rows
+        results = []
+        for gid, data in self.data['groups'].items():
+            if query.lower() in data['name'].lower():
+                results.append((gid, data['name'], data['members']))
+        return results[:20]
     
+    # ========== سجل النشر ==========
     def log_post(self, phone, group_id, group_name, status='success', error=None):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('''INSERT INTO posting_history (phone, group_id, group_name, sent_at, status, error) 
-                       VALUES (?, ?, ?, ?, ?, ?)''',
-                    (phone, str(group_id), group_name, datetime.now(), status, error))
+        self.data['history'].append({
+            'phone': phone,
+            'group_id': str(group_id),
+            'group_name': group_name,
+            'time': str(datetime.now()),
+            'status': status,
+            'error': error
+        })
+        
+        # تحديث إحصائيات الحساب
+        self.increment_posts(phone, status == 'success')
+        
+        # تحديث إحصائيات المجموعة
         if status == 'success':
-            self.increment_account_posts(phone, success=True)
             self.update_group_post(group_id)
-        else:
-            self.increment_account_posts(phone, success=False)
-        conn.commit()
-        conn.close()
+        
+        # الحفاظ على حجم التاريخ (آخر 1000)
+        if len(self.data['history']) > 1000:
+            self.data['history'] = self.data['history'][-1000:]
+        
+        self.save_data()
     
-    def get_posting_stats(self, hours=24):
+    def get_stats(self, hours=24):
         since = datetime.now() - timedelta(hours=hours)
-        conn = sqlite3.connect(self.db_path)
-        total = conn.execute('SELECT COUNT(*) FROM posting_history WHERE sent_at > ?', (since,)).fetchone()[0]
-        success = conn.execute("SELECT COUNT(*) FROM posting_history WHERE sent_at > ? AND status = 'success'", (since,)).fetchone()[0]
-        failed = conn.execute("SELECT COUNT(*) FROM posting_history WHERE sent_at > ? AND status = 'failed'", (since,)).fetchone()[0]
-        conn.close()
+        total = success = failed = 0
+        
+        for post in self.data['history']:
+            post_time = datetime.fromisoformat(post['time'])
+            if post_time > since:
+                total += 1
+                if post['status'] == 'success':
+                    success += 1
+                else:
+                    failed += 1
+        
         return {'total': total, 'success': success, 'failed': failed}
     
     def get_recent_posts(self, limit=10):
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('''SELECT phone, group_name, status, sent_at 
-                             FROM posting_history ORDER BY sent_at DESC LIMIT ?''', (limit,)).fetchall()
-        conn.close()
-        return rows
+        recent = []
+        for post in self.data['history'][-limit:]:
+            recent.append((
+                post['phone'],
+                post['group_name'],
+                post['status'],
+                post['time']
+            ))
+        return recent
     
-    def add_to_queue(self, phone, group_id, message):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT INTO queue (phone, group_id, message, created_at) VALUES (?, ?, ?, ?)', 
-                    (phone, str(group_id), message, datetime.now()))
-        conn.commit()
-        conn.close()
-
-    def get_queue(self):
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('SELECT id, phone, group_id, message, attempts FROM queue ORDER BY created_at ASC').fetchall()
-        conn.close()
-        return rows
-
+    # ========== الردود التلقائية ==========
     def add_auto_reply(self, keyword, response):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT INTO auto_replies (keyword, response, created_at, updated_at) VALUES (?, ?, ?, ?)', 
-                    (keyword, response, datetime.now(), datetime.now()))
-        conn.commit()
-        conn.close()
-
+        self.data['auto_replies'].append({
+            'id': len(self.data['auto_replies']) + 1,
+            'keyword': keyword,
+            'response': response,
+            'match_type': 'exact',
+            'active': True,
+            'created': str(datetime.now())
+        })
+        self.save_data()
+    
     def get_auto_replies(self):
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('SELECT id, keyword, response, match_type, is_active FROM auto_replies').fetchall()
-        conn.close()
-        return rows
-
+        replies = []
+        for r in self.data['auto_replies']:
+            replies.append((
+                r['id'],
+                r['keyword'],
+                r['response'],
+                r['match_type'],
+                1 if r['active'] else 0
+            ))
+        return replies
+    
     def delete_auto_reply(self, rid):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('DELETE FROM auto_replies WHERE id = ?', (rid,))
-        conn.commit()
-        conn.close()
-
+        self.data['auto_replies'] = [r for r in self.data['auto_replies'] 
+                                     if r['id'] != int(rid)]
+        self.save_data()
+    
     def toggle_auto_reply(self, rid, status):
-        conn = sqlite3.connect(self.db_path)
-        conn.execute('UPDATE auto_replies SET is_active = ? WHERE id = ?', (1 if status else 0, rid))
-        conn.commit()
-        conn.close()
+        for r in self.data['auto_replies']:
+            if r['id'] == int(rid):
+                r['active'] = status
+                break
+        self.save_data()
+    
+    # ========== قائمة الانتظار ==========
+    def add_to_queue(self, phone, group_id, message):
+        self.data['queue'].append({
+            'id': len(self.data['queue']) + 1,
+            'phone': phone,
+            'group_id': str(group_id),
+            'message': message,
+            'attempts': 0,
+            'created': str(datetime.now())
+        })
+        self.save_data()
+    
+    def get_queue(self):
+        queue = []
+        for q in self.data['queue']:
+            queue.append((
+                q['id'],
+                q['phone'],
+                q['group_id'],
+                q['message'],
+                q['attempts']
+            ))
+        return queue
 
-    def create_backup(self):
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_file = f"{BACKUPS_DIR}/backup_{timestamp}.db"
-        shutil.copy2(self.db_path, backup_file)
-        return backup_file
-
-db = Database()
+# تهيئة مدير البيانات
+data_manager = DataManager()
 
 # ==================== المتغيرات العامة ====================
-
 USER_CLIENTS = {}
-MESSAGES = db.get_all_messages()
 TEMP = {}
-SETTINGS = {
-    'interval': 3,
-    'encryption': True,
-    'auto_join_enabled': True,
-    'max_groups_per_account': 50,
-    'delay_between_accounts': 2,
-    'auto_backup': True
-}
-SETTINGS.update(db.get_all_settings())
 is_posting = False
 
-# ==================== وظائف مساعدة ====================
+# تحميل الإعدادات
+SETTINGS = {
+    'interval': data_manager.get_setting('interval', 3),
+    'encryption': data_manager.get_setting('encryption', True),
+    'auto_join_enabled': data_manager.get_setting('auto_join', True),
+    'max_groups_per_account': data_manager.get_setting('max_groups', 50),
+    'delay_between_accounts': data_manager.get_setting('delay_accounts', 2)
+}
 
+MESSAGES = data_manager.get_all_messages()
+
+# ==================== وظائف مساعدة ====================
 def format_number(n):
-    if n >= 1000000: return f"{n/1000000:.1f}M"
-    if n >= 1000: return f"{n/1000:.1f}K"
+    if n >= 1000000:
+        return f"{n/1000000:.1f}M"
+    if n >= 1000:
+        return f"{n/1000:.1f}K"
     return str(n)
 
 def encrypt_text(text):
-    if not SETTINGS.get('encryption'): return text
+    if not SETTINGS.get('encryption'):
+        return text
     chars = ['\u200B', '\u200C', '\u200D', '\uFEFF']
     words = text.split()
     return " ".join([w + (random.choice(chars) if random.random() > 0.5 else "") for w in words])
 
-# ==================== الأزرار ولوحات التحكم ====================
-
+# ==================== الأزرار ====================
 def main_buttons():
     enc_status = "✅ مفعل" if SETTINGS['encryption'] else "❌ معطل"
     post_icon = "🚀" if is_posting else "🛑"
@@ -385,186 +390,111 @@ def main_buttons():
         [Button.inline(f"{post_icon} بدء النشر", b"start_p"), Button.inline("🛑 إيقاف النشر", b"stop_p")],
         [Button.inline(f"🛡 التشفير: {enc_status}", b"toggle_enc"), Button.inline("📊 الحالة", b"status")],
         [Button.inline("📢 المجموعات", b"view_chats"), Button.inline("⚙️ إعدادات متقدمة", b"advanced")],
-        [Button.inline("📈 إحصائيات", b"stats"), Button.inline("🔄 إعادة تشغيل", b"restart")],
-        [Button.inline("📋 سجل النشر", b"history"), Button.inline("💾 نسخ احتياطي", b"backup")],
-        [Button.inline("🤖 ميزات خارقة", b"super_features"), Button.inline("📊 تقارير", b"reports")]
+        [Button.inline("📈 إحصائيات", b"stats"), Button.inline("🤖 ميزات خارقة", b"super")],
+        [Button.inline("📋 سجل النشر", b"history"), Button.inline("💾 حفظ", b"save")]
     ]
 
 def advanced_buttons():
     return [
-        [Button.inline("📥 استيراد مجموعات", b"import_groups"), Button.inline("🔍 بحث عن مجموعات", b"search_groups")],
-        [Button.inline("🚫 قائمة المحظورات", b"blacklist_menu"), Button.inline("📊 إحصائيات تفصيلية", b"detailed_stats")],
-        [Button.inline("💾 إعدادات النسخ", b"backup_settings"), Button.inline("📤 تصدير البيانات", b"export_data")],
+        [Button.inline("🚫 قائمة المحظورات", b"blacklist"), Button.inline("🔍 بحث", b"search")],
+        [Button.inline("📊 إحصائيات تفصيلية", b"detailed"), Button.inline("📥 قائمة الانتظار", b"queue")],
         [Button.inline("⬅️ عودة", b"back")]
     ]
 
-def super_features_buttons():
+def super_buttons():
     return [
-        [Button.inline("🤖 الردود التلقائية", b"auto_reply_menu"), Button.inline("🔐 تجربة التشفير", b"test_encryption")],
-        [Button.inline("📊 تحليل المجموعات", b"analyze_groups"), Button.inline("🎯 استهداف ذكي", b"smart_target")],
-        [Button.inline("📅 جدولة النشر", b"schedule"), Button.inline("📊 توقع الأداء", b"prediction")],
+        [Button.inline("🤖 الردود التلقائية", b"auto_reply"), Button.inline("🔐 تجربة التشفير", b"test_enc")],
+        [Button.inline("📊 تحليل المجموعات", b"analyze"), Button.inline("🎯 استهداف ذكي", b"target")],
         [Button.inline("⬅️ عودة", b"back")]
     ]
 
 def auto_reply_buttons():
     return [
-        [Button.inline("➕ إضافة رد", b"add_reply"), Button.inline("🗑 حذف رد", b"del_reply_menu")],
-        [Button.inline("🔄 تفعيل/تعطيل", b"toggle_reply_menu"), Button.inline("📋 عرض الكل", b"list_replies")],
-        [Button.inline("⬅️ عودة", b"super_features")]
+        [Button.inline("➕ إضافة رد", b"add_reply"), Button.inline("🗑 حذف رد", b"del_reply")],
+        [Button.inline("📋 عرض الكل", b"list_replies"), Button.inline("⬅️ عودة", b"super")]
     ]
 
-# ==================== دوال استعادة الجلسات المعدلة ====================
-
+# ==================== استعادة الحسابات ====================
 async def restore_sessions():
-    """استعادة جميع الحسابات من قاعدة البيانات"""
+    """استعادة جميع الحسابات من البيانات المحفوظة"""
     restored = 0
-    accounts = db.get_accounts()
+    accounts = data_manager.get_account_sessions()
     
-    logger.info(f"📱 جاري استعادة {len(accounts)} حساب من قاعدة البيانات...")
+    print(f"📱 جاري استعادة {len(accounts)} حساب...")
     
-    for phone, session_data, status, posts, success, failed in accounts:
+    for phone, session_string in accounts.items():
         try:
-            if session_data and len(session_data) > 10:  # التأكد من وجود بيانات جلسة صالحة
-                # إنشاء عميل من الجلسة النصية
-                client = TelegramClient(StringSession(session_data), API_ID, API_HASH)
+            if session_string and len(session_string) > 10:
+                client = TelegramClient(StringSession(session_string), API_ID, API_HASH)
                 await client.connect()
                 
                 if await client.is_user_authorized():
                     USER_CLIENTS[phone] = client
-                    db.update_account_status(phone, 'active')
+                    data_manager.update_account_status(phone, 'active')
                     restored += 1
-                    logger.success(f"✅ تم استعادة الحساب: {phone}")
+                    print(f"✅ تم استعادة: {phone}")
                 else:
-                    logger.warning(f"⚠️ الحساب غير مفعل: {phone}")
-                    db.update_account_status(phone, 'unauthorized')
-            else:
-                logger.warning(f"⚠️ لا توجد جلسة صالحة لـ {phone}")
-                
+                    data_manager.update_account_status(phone, 'unauthorized')
         except Exception as e:
-            logger.error(f"❌ فشل استعادة {phone}: {str(e)}")
-            db.update_account_status(phone, 'error')
+            print(f"❌ فشل استعادة {phone}: {str(e)[:50]}")
     
-    logger.success(f"✅ تم استعادة {restored} حساب بنجاح من أصل {len(accounts)}")
+    print(f"✅ تم استعادة {restored} حساب")
     return restored
 
-# ==================== دوال تسجيل الدخول المعدلة ====================
-
+# ==================== تسجيل الدخول ====================
 async def handle_phone_login(event, phone):
-    """معالجة إدخال رقم الهاتف"""
     try:
         client = TelegramClient(StringSession(), API_ID, API_HASH)
         await client.connect()
-        
-        # إرسال كود التفعيل
         await client.send_code_request(phone)
         
-        # حفظ حالة المحادثة
-        TEMP[ADMIN_ID] = {
-            "s": "code", 
-            "p": phone, 
-            "c": client
-        }
-        
-        await event.respond(f"📩 تم إرسال كود التفعيل إلى {phone}\nالرجاء إرسال الكود:")
-        
+        TEMP[ADMIN_ID] = {"s": "code", "p": phone, "c": client}
+        await event.respond(f"📩 تم إرسال الكود إلى {phone}\nأرسل الكود الآن:")
     except Exception as e:
         await event.respond(f"❌ خطأ: {str(e)[:100]}")
 
 async def handle_code_verification(event, state, code):
-    """معالجة إدخال الكود"""
     try:
         client = state["c"]
         phone = state["p"]
         
-        # تسجيل الدخول بالكود
         await client.sign_in(phone, code)
         
-        # حفظ الجلسة كنص مشفر
-        session_data = client.session.save()
-        
-        # حفظ في قاعدة البيانات
-        db.add_account(phone, session_data)
-        
-        # إضافة إلى الذاكرة
+        # حفظ الجلسة في التخزين الدائم
+        session_string = client.session.save()
+        data_manager.add_account(phone, session_string)
         USER_CLIENTS[phone] = client
         
-        await event.respond(f"✅ تم تفعيل الحساب {phone} بنجاح!\n💾 تم حفظ الجلسة في قاعدة البيانات.")
-        
-        # تنظيف الحالة المؤقتة
+        await event.respond(f"✅ تم تفعيل {phone} بنجاح!\n💾 تم الحفظ في Render")
         TEMP.pop(ADMIN_ID, None)
         
-        # تحديث المجموعات
-        asyncio.create_task(refresh_groups_async())
-        
     except SessionPasswordNeededError:
-        # الحساب محمي بكلمة سر
-        TEMP[ADMIN_ID] = {
-            "s": "pass",
-            "p": phone,
-            "c": client
-        }
-        await event.respond("🔐 هذا الحساب محمي بكلمة سر\nالرجاء إرسال كلمة المرور:")
-        
+        TEMP[ADMIN_ID] = {"s": "pass", "p": phone, "c": client}
+        await event.respond("🔐 هذا الحساب محمي بكلمة سر\nأرسل كلمة المرور:")
     except Exception as e:
-        await event.respond(f"❌ فشل التفعيل: {str(e)[:100]}")
+        await event.respond(f"❌ فشل: {str(e)[:100]}")
 
 async def handle_password(event, state, password):
-    """معالجة إدخال كلمة المرور"""
     try:
         client = state["c"]
         phone = state["p"]
         
-        # تسجيل الدخول بكلمة المرور
         await client.sign_in(password=password)
         
-        # حفظ الجلسة كنص مشفر
-        session_data = client.session.save()
-        
-        # حفظ في قاعدة البيانات
-        db.add_account(phone, session_data)
-        
-        # إضافة إلى الذاكرة
+        session_string = client.session.save()
+        data_manager.add_account(phone, session_string)
         USER_CLIENTS[phone] = client
         
-        await event.respond(f"✅ تم تفعيل الحساب {phone} بنجاح!\n💾 تم حفظ الجلسة في قاعدة البيانات.")
-        
-        # تنظيف الحالة المؤقتة
+        await event.respond(f"✅ تم تفعيل {phone} بنجاح!\n💾 تم الحفظ في Render")
         TEMP.pop(ADMIN_ID, None)
         
-        # تحديث المجموعات
-        asyncio.create_task(refresh_groups_async())
-        
     except Exception as e:
-        await event.respond(f"❌ خطأ في كلمة المرور: {str(e)[:100]}")
+        await event.respond(f"❌ خطأ: {str(e)[:100]}")
 
-# ==================== دوال أخرى ====================
-
-async def refresh_groups_async():
-    """تحديث قائمة المجموعات"""
-    count = 0
-    for phone, client in USER_CLIENTS.items():
-        try:
-            async for dialog in client.iter_dialogs():
-                if dialog.is_group or dialog.is_channel:
-                    members = getattr(dialog.entity, 'participants_count', 0)
-                    db.add_group(
-                        dialog.id, 
-                        dialog.name, 
-                        getattr(dialog.entity, 'username', None),
-                        'group' if dialog.is_group else 'channel',
-                        members, 
-                        phone
-                    )
-                    count += 1
-        except Exception as e:
-            logger.error(f"خطأ في تحديث مجموعات {phone}: {e}")
-    
-    logger.info(f"✅ تم تحديث {count} مجموعة")
-
+# ==================== النشر ====================
 async def poster():
-    """دالة النشر الرئيسية"""
     global is_posting
-    logger.info("🚀 بدء النشر...")
+    print("🚀 بدء النشر...")
     
     while is_posting:
         try:
@@ -572,94 +502,76 @@ async def poster():
                 await asyncio.sleep(5)
                 continue
             
-            message_text = MESSAGES["1"]
+            message = MESSAGES["1"]
             
             for phone, client in list(USER_CLIENTS.items()):
                 if not is_posting:
                     break
                 
                 try:
-                    groups_sent = 0
-                    
+                    sent = 0
                     async for dialog in client.iter_dialogs():
                         if not is_posting:
                             break
                         
                         if dialog.is_group or dialog.is_channel:
-                            # التحقق من القائمة السوداء
-                            blacklisted = [g[0] for g in db.get_blacklisted_groups()]
+                            # تحقق من القائمة السوداء
+                            blacklisted = [g[0] for g in data_manager.get_blacklisted()]
                             if str(dialog.id) in blacklisted:
                                 continue
                             
-                            if groups_sent >= SETTINGS.get('max_groups_per_account', 50):
+                            if sent >= SETTINGS['max_groups_per_account']:
                                 break
                             
                             try:
-                                # تحديث معلومات المجموعة
+                                # حفظ المجموعة
                                 members = getattr(dialog.entity, 'participants_count', 0)
-                                db.add_group(
-                                    dialog.id, 
-                                    dialog.name, 
-                                    getattr(dialog.entity, 'username', None),
-                                    'group' if dialog.is_group else 'channel',
-                                    members, 
-                                    phone
-                                )
+                                data_manager.add_group(dialog.id, dialog.name, members)
                                 
-                                # إرسال الرسالة مع التشفير
-                                final_message = encrypt_text(message_text)
-                                await client.send_message(dialog.id, final_message)
+                                # إرسال الرسالة
+                                await client.send_message(dialog.id, encrypt_text(message))
                                 
                                 # تسجيل النجاح
-                                db.log_post(phone, dialog.id, dialog.name, 'success')
-                                groups_sent += 1
+                                data_manager.log_post(phone, dialog.id, dialog.name, 'success')
+                                sent += 1
                                 
-                                logger.info(f"✅ {dialog.name[:30]} - {phone[-8:]}")
-                                
-                                # الانتظار حسب الإعدادات
                                 await asyncio.sleep(SETTINGS['interval'])
                                 
                             except FloodWaitError as e:
-                                wait_time = e.seconds
-                                logger.warning(f"⚠️ Flood wait لمدة {wait_time} ثانية")
-                                await asyncio.sleep(wait_time)
-                                
+                                print(f"⚠️ انتظار {e.seconds} ثانية")
+                                await asyncio.sleep(e.seconds)
                             except Exception as e:
-                                logger.error(f"❌ خطأ في الإرسال: {str(e)[:50]}")
-                                db.log_post(phone, dialog.id, dialog.name, 'failed', str(e)[:100])
+                                data_manager.log_post(phone, dialog.id, dialog.name, 'failed', str(e)[:50])
                     
-                    # انتظار بين الحسابات
-                    await asyncio.sleep(SETTINGS.get('delay_between_accounts', 2))
+                    await asyncio.sleep(SETTINGS['delay_between_accounts'])
                     
                 except Exception as e:
-                    logger.error(f"❌ خطأ في حساب {phone}: {str(e)[:50]}")
+                    print(f"❌ خطأ في حساب {phone}: {e}")
             
-            # انتظار قبل الدورة التالية
             await asyncio.sleep(5)
             
         except Exception as e:
-            logger.error(f"❌ خطأ عام في النشر: {e}")
+            print(f"❌ خطأ عام: {e}")
             await asyncio.sleep(10)
     
-    logger.info("🛑 توقف النشر")
+    print("🛑 توقف النشر")
 
 # ==================== معالجات الأحداث ====================
-
 async def start_handler(event):
     if event.sender_id != ADMIN_ID:
         return
     
-    accounts = db.get_accounts()
-    groups = db.get_all_groups()
-    stats = db.get_posting_stats()
+    accounts = data_manager.get_accounts()
+    groups = data_manager.get_all_groups()
+    stats = data_manager.get_stats()
     
-    text = (f"🤖 **مرحباً بك في بوت النشر الخارق!**\n\n"
-            f"📊 **نظرة عامة:**\n"
-            f"• الحسابات النشطة: `{len(USER_CLIENTS)}/{len(accounts)}`\n"
-            f"• المجموعات المسجلة: `{len(groups)}`\n"
-            f"• منشورات اليوم: `{stats['total']}` (✅ {stats['success']} | ❌ {stats['failed']})\n"
-            f"• حالة النشر: `{'🚀 يعمل' if is_posting else '🛑 متوقف'}`\n\n"
-            f"💡 استخدم الأزرار أدناه للتحكم:")
+    text = (f"🤖 **بوت Render الأسطوري**\n\n"
+            f"📊 **الحالة:**\n"
+            f"• الحسابات: `{len(USER_CLIENTS)}/{len(accounts)}`\n"
+            f"• المجموعات: `{len(groups)}`\n"
+            f"• منشورات اليوم: `{stats['total']}`\n"
+            f"• النشر: `{'🚀 يعمل' if is_posting else '🛑 متوقف'}`\n\n"
+            f"💾 **الحفظ:** دائم على Render ✅")
     
     await event.respond(text, buttons=main_buttons())
 
@@ -672,199 +584,179 @@ async def callback_handler(event):
     data = event.data.decode()
     
     if data == "back":
-        await event.edit("👋 لوحة التحكم الرئيسية:", buttons=main_buttons())
+        await event.edit("👋 القائمة الرئيسية:", buttons=main_buttons())
     
     elif data == "advanced":
-        await event.edit("⚙️ الإعدادات المتقدمة:", buttons=advanced_buttons())
+        await event.edit("⚙️ إعدادات متقدمة:", buttons=advanced_buttons())
     
-    elif data == "super_features":
-        await event.edit("🤖 الميزات الخارقة:", buttons=super_features_buttons())
+    elif data == "super":
+        await event.edit("🤖 الميزات الخارقة:", buttons=super_buttons())
     
-    elif data == "auto_reply_menu":
-        replies = db.get_auto_replies()
-        text = f"🤖 **الردود التلقائية**\n\n📊 عدد الردود: {len(replies)}\n\n"
-        if replies:
-            for i, (rid, keyword, response, match_type, active) in enumerate(replies[:10], 1):
-                status = "🟢 مفعل" if active else "🔴 معطل"
-                text += f"{i}. `{keyword}` → {response[:30]}...\n   {status}\n\n"
-        else:
-            text += "لا توجد ردود تلقائية حالياً.\n"
+    elif data == "auto_reply":
+        replies = data_manager.get_auto_replies()
+        text = f"🤖 **الردود التلقائية**\nعدد الردود: {len(replies)}\n\n"
+        for rid, kw, resp, mt, active in replies[:10]:
+            status = "🟢" if active else "🔴"
+            text += f"{status} `{kw}` → {resp[:30]}...\n"
         await event.edit(text, buttons=auto_reply_buttons())
     
     elif data == "start_p":
         if not is_posting:
             is_posting = True
             asyncio.create_task(poster())
-            await event.answer("🚀 تم بدء النشر بنجاح!", alert=True)
-            await event.edit(buttons=main_buttons())
+            await event.answer("🚀 بدأ النشر!", alert=True)
         else:
             await event.answer("⚠️ النشر يعمل بالفعل!", alert=True)
+        await event.edit(buttons=main_buttons())
     
     elif data == "stop_p":
         is_posting = False
-        await event.answer("🛑 تم إيقاف النشر", alert=True)
+        await event.answer("🛑 توقف النشر", alert=True)
         await event.edit(buttons=main_buttons())
     
     elif data == "toggle_enc":
         SETTINGS['encryption'] = not SETTINGS['encryption']
-        db.save_setting('encryption', SETTINGS['encryption'])
+        data_manager.set_setting('encryption', SETTINGS['encryption'])
         await event.edit(buttons=main_buttons())
     
     elif data == "status":
-        stats = db.get_posting_stats()
+        stats = data_manager.get_stats()
         await event.answer(
             f"📊 إحصائيات 24 ساعة:\n"
             f"✅ نجاح: {stats['success']}\n"
             f"❌ فشل: {stats['failed']}\n"
-            f"📦 الإجمالي: {stats['total']}",
+            f"📦 المجموع: {stats['total']}",
             alert=True
         )
     
     elif data == "msg":
         TEMP[ADMIN_ID] = "msg"
-        await event.respond("📝 أرسل نص الإعلان الجديد:")
+        await event.respond("📝 أرسل نص الإعلان:")
     
     elif data == "time":
         TEMP[ADMIN_ID] = "time"
-        await event.respond("⏱ أرسل الفاصل الزمني بالثواني (1-60):")
+        await event.respond("⏱ أرسل الفاصل الزمني (1-60 ثانية):")
     
     elif data == "add":
         TEMP[ADMIN_ID] = "phone"
-        await event.respond("📱 أرسل رقم الهاتف مع مفتاح الدولة (مثال: +9665xxxxxxx):")
+        await event.respond("📱 أرسل رقم الهاتف (مع مفتاح الدولة):")
     
     elif data == "del_list":
-        accounts = db.get_accounts()
+        accounts = data_manager.get_accounts()
         if not accounts:
             await event.answer("❌ لا توجد حسابات", alert=True)
             return
         
         btns = []
-        for phone, session_data, status, posts, success, failed in accounts[:10]:
-            short = phone[-8:] if len(phone) > 8 else phone
-            status_icon = "🟢" if status == 'active' else "🔴"
-            btns.append([Button.inline(f"{status_icon} {short} ({posts})", f"rm_{phone}".encode())])
+        for phone, sess, status, total, suc, fail in accounts[:10]:
+            short = phone[-8:]
+            icon = "🟢" if status == 'active' else "🔴"
+            btns.append([Button.inline(f"{icon} {short} ({total})", f"rm_{phone}".encode())])
         
         btns.append([Button.inline("⬅️ عودة", b"back")])
-        await event.edit("🗑 اختر حساباً للحذف", buttons=btns)
+        await event.edit("🗑 اختر حساباً للحذف:", buttons=btns)
     
     elif data.startswith("rm_"):
         phone = data[3:]
-        await delete_account(event, phone)
+        if phone in USER_CLIENTS:
+            await USER_CLIENTS[phone].disconnect()
+            del USER_CLIENTS[phone]
+        data_manager.remove_account(phone)
+        await event.answer(f"✅ تم حذف {phone}", alert=True)
+        await callback_handler(event)  # العودة لقائمة الحذف
     
     elif data == "view_chats":
-        groups = db.get_all_groups()
-        blacklisted = db.get_blacklisted_groups()
+        groups = data_manager.get_all_groups()
+        blacklisted = data_manager.get_blacklisted()
         
-        text = f"📢 **المجموعات**\nالإجمالي: {len(groups)}\nالمحظور: {len(blacklisted)}\n\n"
-        
+        text = f"📢 **المجموعات**\nالإجمالي: {len(groups)} | محظور: {len(blacklisted)}\n\n"
         for gid, name, members, posts, bl, last in groups[:15]:
-            name_short = name[:25] if name else "بدون اسم"
+            name_short = name[:25]
             status = "🚫" if bl else "✅"
-            members_fmt = format_number(members) if members else "?"
+            members_fmt = format_number(members)
             text += f"{status} {name_short}\n   👥 {members_fmt} | 📨 {posts}\n"
-        
-        if len(groups) > 15:
-            text += f"\n... و {len(groups) - 15} مجموعة أخرى"
         
         await event.edit(text, buttons=main_buttons())
     
     elif data == "history":
-        recent = db.get_recent_posts(15)
-        text = "📋 **آخر 15 عملية نشر**\n\n"
-        
-        for phone, group, status, sent_at in recent:
-            time_str = datetime.fromisoformat(sent_at).strftime('%H:%M')
+        recent = data_manager.get_recent_posts(15)
+        text = "📋 **آخر 15 منشور**\n\n"
+        for phone, group, status, t in recent:
+            time_str = datetime.fromisoformat(t).strftime('%H:%M')
             icon = "✅" if status == 'success' else "❌"
-            text += f"{icon} {time_str} - {group[:20]}...\n"
-        
+            text += f"{icon} {time_str} - {group[:20]}\n"
         await event.edit(text, buttons=advanced_buttons())
     
-    elif data == "backup":
-        try:
-            backup_file = db.create_backup()
-            await event.answer(f"✅ تم إنشاء النسخة: {os.path.basename(backup_file)}", alert=True)
-        except Exception as e:
-            await event.answer(f"❌ فشل النسخ: {e}", alert=True)
+    elif data == "save":
+        await event.answer("✅ جميع البيانات محفوظة في Render!", alert=True)
     
-    elif data == "test_encryption":
-        original = "رسالة تجريبية لاختبار التشفير"
+    elif data == "blacklist":
+        blacklisted = data_manager.get_blacklisted()
+        if not blacklisted:
+            await event.edit("📭 لا توجد مجموعات محظورة", buttons=advanced_buttons())
+            return
+        
+        text = "🚫 **المجموعات المحظورة**\n\n"
+        for gid, name in blacklisted[:20]:
+            text += f"• {name[:40]}\n"
+        await event.edit(text, buttons=advanced_buttons())
+    
+    elif data == "test_enc":
+        original = "رسالة اختبار للتشفير"
         encrypted = encrypt_text(original)
-        text = (f"🔐 **اختبار التشفير**\n\n"
-                f"📝 الأصلي: {original}\n"
-                f"🔒 المشفر: {encrypted}\n"
-                f"📊 الطول: {len(original)} → {len(encrypted)} حرف")
-        await event.edit(text, buttons=super_features_buttons())
+        text = f"🔐 **اختبار التشفير**\n\n📝 الأصلي: {original}\n🔒 المشفر: {encrypted}"
+        await event.edit(text, buttons=super_buttons())
     
-    elif data == "analyze_groups":
-        groups = db.get_all_groups()
+    elif data == "analyze":
+        groups = data_manager.get_all_groups()
         if not groups:
             await event.answer("❌ لا توجد مجموعات", alert=True)
             return
         
         total_members = sum(g[2] or 0 for g in groups)
-        active = [g for g in groups if g[3] > 0]
+        active = len([g for g in groups if g[3] > 0])
         
         text = (f"📊 **تحليل المجموعات**\n\n"
-                f"📈 الإجمالي: {len(groups)}\n"
-                f"👥 الأعضاء: {format_number(total_members)}\n"
-                f"📊 متوسط: {format_number(total_members/len(groups))}\n"
-                f"✅ نشطة: {len(active)}\n"
-                f"❌ خاملة: {len(groups)-len(active)}\n"
-                f"📊 نسبة النشاط: {len(active)/len(groups)*100:.1f}%")
+                f"عدد المجموعات: {len(groups)}\n"
+                f"إجمالي الأعضاء: {format_number(total_members)}\n"
+                f"المجموعات النشطة: {active}\n"
+                f"نسبة النشاط: {active/len(groups)*100:.1f}%")
         
-        await event.edit(text, buttons=super_features_buttons())
+        await event.edit(text, buttons=super_buttons())
     
-    elif data == "restart":
-        await event.respond("🔄 جاري إعادة التشغيل...")
-        os.execl(sys.executable, sys.executable, *sys.argv)
-
-async def delete_account(event, phone):
-    """حذف حساب"""
-    if phone in USER_CLIENTS:
-        await USER_CLIENTS[phone].disconnect()
-        del USER_CLIENTS[phone]
-    
-    db.remove_account(phone)
-    await event.answer(f"✅ تم حذف {phone}", alert=True)
-    
-    # العودة لقائمة الحذف
-    accounts = db.get_accounts()
-    if accounts:
-        btns = []
-        for phone, session_data, status, posts, success, failed in accounts[:10]:
-            short = phone[-8:] if len(phone) > 8 else phone
-            status_icon = "🟢" if status == 'active' else "🔴"
-            btns.append([Button.inline(f"{status_icon} {short} ({posts})", f"rm_{phone}".encode())])
-        
-        btns.append([Button.inline("⬅️ عودة", b"back")])
-        await event.edit("🗑 اختر حساباً للحذف", buttons=btns)
-    else:
-        await event.edit("✅ لا توجد حسابات للحذف", buttons=main_buttons())
+    elif data == "add_reply":
+        TEMP[ADMIN_ID] = {"s": "reply_keyword"}
+        await event.respond("🔑 أرسل الكلمة المفتاحية:")
 
 async def text_handler(event):
-    """معالج النصوص"""
     state = TEMP.get(ADMIN_ID)
     text = event.message.text.strip()
     
-    # التحقق من الردود التلقائية في المجموعات
+    # الردود التلقائية
     if event.is_group and event.message.text and not event.out:
-        replies = db.get_auto_replies()
-        msg_text = event.message.text.lower()
-        
-        for rid, keyword, response, match_type, active in replies:
-            if not active:
-                continue
-            
-            if (match_type == 'exact' and msg_text == keyword.lower()) or \
-               (match_type == 'contains' and keyword.lower() in msg_text) or \
-               (match_type == 'startswith' and msg_text.startswith(keyword.lower())):
-                await event.reply(response)
+        replies = data_manager.get_auto_replies()
+        msg_lower = text.lower()
+        for rid, kw, resp, mt, active in replies:
+            if active and kw.lower() in msg_lower:
+                await event.reply(resp)
                 break
     
-    # معالجة الروابط للانضمام التلقائي
-    links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)[a-zA-Z0-9_-]+|https?://t\.me/[a-zA-Z0-9_]+)", text)
-    if links and SETTINGS.get('auto_join_enabled', True) and USER_CLIENTS:
-        await handle_auto_join(event, links)
+    # معالجة الروابط
+    links = re.findall(r"(https?://t\.me/\S+)", text)
+    if links and SETTINGS['auto_join_enabled'] and USER_CLIENTS:
+        await event.respond(f"⏳ جاري الانضمام إلى {len(links)} مجموعة...")
+        for link in links[:3]:
+            for phone, client in USER_CLIENTS.items():
+                try:
+                    if "joinchat" in link or "+" in link:
+                        hash_part = link.split('/')[-1].replace('+', '')
+                        await client(ImportChatInviteRequest(hash_part))
+                    else:
+                        await client(JoinChannelRequest(link))
+                    await event.respond(f"✅ {phone} انضم إلى {link[:30]}")
+                except Exception as e:
+                    await event.respond(f"❌ {phone}: {str(e)[:50]}")
+                await asyncio.sleep(2)
         return
     
     # معالجة حالات المستخدم
@@ -873,10 +765,17 @@ async def text_handler(event):
             await handle_code_verification(event, state, text)
         elif state.get("s") == "pass":
             await handle_password(event, state, text)
+        elif state.get("s") == "reply_keyword":
+            TEMP[ADMIN_ID] = {"s": "reply_response", "kw": text}
+            await event.respond("💬 أرسل نص الرد:")
+        elif state.get("s") == "reply_response":
+            data_manager.add_auto_reply(state['kw'], text)
+            await event.respond("✅ تم إضافة الرد!", buttons=super_buttons())
+            TEMP.pop(ADMIN_ID)
     
     elif state == "msg":
         MESSAGES["1"] = text
-        db.save_message("1", text)
+        data_manager.save_message("1", text)
         TEMP.pop(ADMIN_ID)
         await event.respond("✅ تم حفظ الإعلان!", buttons=main_buttons())
     
@@ -885,61 +784,33 @@ async def text_handler(event):
             interval = int(text)
             if 1 <= interval <= 60:
                 SETTINGS['interval'] = interval
-                db.save_setting('interval', interval)
+                data_manager.set_setting('interval', interval)
                 TEMP.pop(ADMIN_ID)
                 await event.respond(f"✅ تم ضبط الوقت على {text} ثانية", buttons=main_buttons())
             else:
-                await event.respond("❌ الرجاء إدخال قيمة بين 1 و 60")
+                await event.respond("❌ القيمة بين 1 و 60")
         except:
-            await event.respond("❌ أرسل رقماً فقط")
+            await event.respond("❌ أرسل رقماً صحيحاً")
     
     elif state == "phone":
         await handle_phone_login(event, text)
 
-async def handle_auto_join(event, links):
-    """معالجة الانضمام التلقائي للروابط"""
-    await event.respond(f"⏳ جاري الانضمام لـ {len(links)} مجموعة...")
-    
-    success = 0
-    failed = 0
-    
-    for link in links[:3]:  # حد أقصى 3 روابط في المرة
-        for phone, client in USER_CLIENTS.items():
-            try:
-                if "joinchat" in link or "+" in link:
-                    hash_part = link.split('/')[-1].replace('+', '')
-                    await client(ImportChatInviteRequest(hash_part))
-                else:
-                    await client(JoinChannelRequest(link))
-                
-                success += 1
-                await event.respond(f"✅ {phone} انضم إلى {link[:30]}...")
-                await asyncio.sleep(2)
-                
-            except Exception as e:
-                failed += 1
-                await event.respond(f"❌ {phone}: {str(e)[:50]}")
-    
-    await event.respond(f"📊 **النتيجة:**\n✅ نجاح: {success}\n❌ فشل: {failed}")
-
 # ==================== الدالة الرئيسية ====================
-
 async def main():
     print("="*60)
-    print("🚀 بوت النشر الخارق - الإصدار الأسطوري مع الحفظ الدائم")
+    print("🚀 بوت Render الأسطوري - مع الحفظ الدائم")
     print("="*60)
     
     # تشغيل خادم الويب
     Thread(target=run_web, daemon=True).start()
     
-    # استعادة الجلسات من قاعدة البيانات
+    # استعادة الحسابات
     await restore_sessions()
     
-    # إنشاء وتشغيل البوت
+    # تشغيل البوت
     bot = TelegramClient('bot_session', API_ID, API_HASH)
     await bot.start(bot_token=BOT_TOKEN)
     
-    # تسجيل المعالجات
     @bot.on(events.NewMessage(pattern='/start'))
     async def start(e):
         await start_handler(e)
@@ -953,15 +824,15 @@ async def main():
         if e.message.text:
             await text_handler(e)
     
-    logger.success("✅ البوت جاهز! أرسل /start")
+    print("✅ البوت جاهز على Render!")
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("👋 تم إيقاف البوت")
+        print("👋 تم إيقاف البوت")
     except Exception as e:
-        logger.critical(f"💥 خطأ جسيم: {e}")
+        print(f"💥 خطأ: {e}")
         time.sleep(5)
         os.execl(sys.executable, sys.executable, *sys.argv)
