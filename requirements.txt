@@ -1,4 +1,6 @@
-telethon
-Flask
-gunicorn
-python-dotenv
+telethon>=1.42.0
+flask>=3.1.0
+gunicorn>=25.1.0
+python-dotenv>=1.2.2
+rsa>=4.9.1
+pyasn1>=0.6.2
