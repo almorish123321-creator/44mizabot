@@ -1243,7 +1243,5 @@ async def main():
     # تشغيل البوت
     bot = TelegramClient('bot_session', API_ID, API_HASH)
     await bot.start(bot_token=BOT_TOKEN)
-
-@bot.on(events.NewMessage(pattern='/start'))
-async def start(e):
-    await start_handler(e)
+    
+    @bot.on(events.NewMessage(pattern='/start'))
