@@ -50,9 +50,12 @@ for dir_path in [DATA_DIR, BACKUPS_DIR, LOGS_DIR, TEMP_DIR, EXPORTS_DIR]:
 
 # ==================== خادم الويب (Keep-Alive) ====================
 app = Flask(__name__)
+
+# ✅ هذا السطر الجديد
+app.config['SERVER_NAME'] = None
+
 @app.route('/')
 def home(): return jsonify({'status': 'online', 'msg': '🤖 البوت الكامل يعمل بنجاح!', 'time': str(datetime.now())})
-def run_web():
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port)
 
