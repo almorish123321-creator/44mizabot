@@ -1245,4 +1245,4 @@ async def main():
     await bot.start(bot_token=BOT_TOKEN)
     
     # ✅ معالجات الأحداث هنا (داخل الدالة main)
-    @bot.o
+    @bot.on(events.NewMessage(pattern='/start'))
