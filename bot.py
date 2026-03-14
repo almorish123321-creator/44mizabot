@@ -50,11 +50,15 @@ for dir_path in [DATA_DIR, BACKUPS_DIR, LOGS_DIR, TEMP_DIR, EXPORTS_DIR]:
 
 # ==================== خادم الويب (Keep-Alive) ====================
 app = Flask(__name__)
+app.config['SERVER_NAME'] = None  # مهم لـ Render
+
 @app.route('/')
-def home(): return jsonify({'status': 'online', 'msg': '🤖 البوت الكامل يعمل بنجاح!', 'time': str(datetime.now())})
+def home(): 
+    return jsonify({'status': 'online', 'msg': '🤖 البوت الكامل يعمل بنجاح!', 'time': str(datetime.now())})
+
 def run_web():
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ==================== نظام التسجيل ====================
 
@@ -356,7 +360,10 @@ def auto_reply_buttons():
 # ==================== المعالجات ====================
 
 async def start_handler(event):
-    if event.sender_id != ADMIN_ID: return
+    if event.sender_id != ADMIN_ID: 
+        print(f"❌ مستخدم غير مصرح: {event.sender_id}")
+        return
+    print(f"✅ مستخدم مصرح: {event.sender_id}")
     accounts = db.get_accounts()
     groups = db.get_all_groups()
     await event.respond(
@@ -757,23 +764,55 @@ async def restore_sessions():
 
 async def main():
     global bot
-    Thread(target=run_web, daemon=True).start(); await restore_sessions()
-    bot = TelegramClient('bot_session', API_ID, API_HASH); await bot.start(bot_token=BOT_TOKEN)
+    Thread(target=run_web, daemon=True).start()
+    
+    print("🚀 جاري تشغيل البوت...")
+    await restore_sessions()
+    
+    bot = TelegramClient('bot_session', API_ID, API_HASH)
+    await bot.start(bot_token=BOT_TOKEN)
+    
+    # ✅ التحقق من البوت
+    me = await bot.get_me()
+    print(f"✅ البوت متصل: @{me.username}")
+    print(f"👤 آيدي البوت: {me.id}")
+    print(f"👤 الآيدي المطلوب: {ADMIN_ID}")
+    
+    # ✅ معالجات الأحداث هنا
     @bot.on(events.NewMessage(pattern='/start'))
-    async def start(e): await start_handler(e)
+    async def start(e):
+        print(f"📩 استقبلت أمر /start من {e.sender_id}")
+        await start_handler(e)
+    
     @bot.on(events.CallbackQuery())
-    async def callback(e): await callback_handler(e)
+    async def callback(e):
+        print(f"🖱 استقبلت ضغطة زر من {e.sender_id}")
+        await callback_handler(e)
+    
     @bot.on(events.NewMessage)
     async def text(e):
         if e.message.text and e.sender_id == ADMIN_ID:
+            print(f"💬 استقبلت رسالة: {e.message.text[:30]}...")
             state = TEMP.get(ADMIN_ID)
-            if isinstance(state, dict) and state.get("s") == "code": await handle_code_verification(e, state, e.message.text.strip())
-            elif isinstance(state, dict) and state.get("s") == "pass": await handle_password(e, state, e.message.text.strip())
-            else: await text_handler(e)
-        elif e.is_group and e.message.text: await text_handler(e)
-    logger.success("✅ البوت جاهز! أرسل /start"); await bot.run_until_disconnected()
+            if isinstance(state, dict) and state.get("s") == "code":
+                await handle_code_verification(e, state, e.message.text.strip())
+            elif isinstance(state, dict) and state.get("s") == "pass":
+                await handle_password(e, state, e.message.text.strip())
+            else:
+                await text_handler(e)
+        elif e.is_group and e.message.text:
+            await text_handler(e)
+    
+    logger.success("✅ البوت جاهز! أرسل /start")
+    print("🎉 البوت يعمل وينتظر الأوامر...")
+    await bot.run_until_disconnected()
 
 if __name__ == "__main__":
-    try: asyncio.run(main())
-    except KeyboardInterrupt: pass
-    except Exception as e: logger.critical(f"💥 خطأ: {e}"); time.sleep(5); os.execl(sys.executable, sys.executable, *sys.argv)
+    try: 
+        asyncio.run(main())
+    except KeyboardInterrupt: 
+        print("🛑 تم إيقاف البوت")
+    except Exception as e: 
+        logger.critical(f"💥 خطأ: {e}")
+        time.sleep(5)
+        os.execl(sys.executable, sys.executable, *sys.argv)
