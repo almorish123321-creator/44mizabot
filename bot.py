@@ -53,8 +53,7 @@ app = Flask(__name__)
 app.config['SERVER_NAME'] = None  # مهم لـ Render
 
 @app.route('/')
-def home(): 
-    return jsonify({'status': 'online', 'msg': '🤖 البوت الكامل يعمل بنجاح!', 'time': str(datetime.now())})
+def home(): return jsonify({'status': 'online', 'msg': '🤖 البوت الكامل يعمل بنجاح!', 'time': str(datetime.now())})
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -97,6 +96,7 @@ class Database:
         c.execute('''CREATE TABLE IF NOT EXISTS posting_history (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, group_id TEXT, group_name TEXT, sent_at TIMESTAMP, status TEXT, error TEXT)''')
         c.execute('''CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, group_id TEXT, message TEXT, attempts INTEGER DEFAULT 0, created_at TIMESTAMP)''')
         c.execute('''CREATE TABLE IF NOT EXISTS auto_replies (id INTEGER PRIMARY KEY AUTOINCREMENT, keyword TEXT, response TEXT, match_type TEXT DEFAULT 'exact', is_active INTEGER DEFAULT 1, created_at TIMESTAMP, updated_at TIMESTAMP)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS joined_links (id INTEGER PRIMARY KEY AUTOINCREMENT, link TEXT, group_id TEXT, group_name TEXT, joined_at TIMESTAMP, joined_by TEXT)''')
         conn.commit(); conn.close(); logger.success("قاعدة البيانات جاهزة")
     
     def save_setting(self, key, value):
@@ -128,8 +128,12 @@ class Database:
         conn = sqlite3.connect(self.db_path)
         conn.execute('INSERT OR REPLACE INTO accounts (phone, session_str, added_at, last_active, status) VALUES (?, ?, ?, ?, ?)', (phone, session_str, datetime.now(), datetime.now(), 'active'))
         conn.commit(); conn.close()
+        logger.success(f"✅ تم حفظ الحساب {phone} في قاعدة البيانات")
     
     def remove_account(self, phone):
+        if phone in USER_CLIENTS:
+            asyncio.create_task(USER_CLIENTS[phone].disconnect())
+            del USER_CLIENTS[phone]
         conn = sqlite3.connect(self.db_path)
         conn.execute('DELETE FROM accounts WHERE phone = ?', (phone,))
         conn.commit(); conn.close()
@@ -250,6 +254,18 @@ class Database:
         conn.execute('UPDATE auto_replies SET is_active = ?, updated_at = ? WHERE id = ?', (1 if active else 0, datetime.now(), reply_id))
         conn.commit(); conn.close()
     
+    # دوال جديدة للروابط المنضم لها
+    def add_joined_link(self, link, group_id, group_name, joined_by):
+        conn = sqlite3.connect(self.db_path)
+        conn.execute('INSERT INTO joined_links (link, group_id, group_name, joined_at, joined_by) VALUES (?, ?, ?, ?, ?)', 
+                    (link, str(group_id), group_name, datetime.now(), joined_by))
+        conn.commit(); conn.close()
+    
+    def get_joined_links(self, limit=50):
+        conn = sqlite3.connect(self.db_path)
+        rows = conn.execute('SELECT link, group_name, joined_at, joined_by FROM joined_links ORDER BY joined_at DESC LIMIT ?', (limit,)).fetchall()
+        conn.close(); return rows
+    
     def create_backup(self):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_file = f"{BACKUPS_DIR}/backup_{timestamp}.db"
@@ -265,7 +281,7 @@ db = Database()
 
 USER_CLIENTS = {}
 MESSAGES = db.get_all_messages()
-SETTINGS = {'interval': 3, 'encryption': True, 'auto_join_enabled': True, 'max_groups_per_account': 50}
+SETTINGS = {'interval': 3, 'encryption': True, 'auto_join_enabled': True, 'max_groups_per_account': 50, 'save_joined_links': True}
 SETTINGS.update(db.get_all_settings())
 TEMP = {}
 is_posting = False
@@ -295,6 +311,7 @@ def format_number(num):
 
 def main_buttons():
     enc_status = "✅ مفعل" if SETTINGS['encryption'] else "❌ معطل"
+    auto_join_status = "✅ مفعل" if SETTINGS.get('auto_join_enabled', True) else "❌ معطل"
     return [
         [Button.inline("➕ إضافة حساب", b"add"), Button.inline("🗑 حذف حساب", b"del_list")],
         [Button.inline("📝 ضبط الرسالة", b"msg"), Button.inline("⏱ ضبط الوقت", b"time")],
@@ -308,8 +325,11 @@ def main_buttons():
 
 def advanced_buttons():
     auto_join = "✅" if SETTINGS.get('auto_join_enabled', True) else "❌"
+    save_links = "✅" if SETTINGS.get('save_joined_links', True) else "❌"
     return [
         [Button.inline(f"🤖 انضمام تلقائي {auto_join}", b"toggle_autojoin")],
+        [Button.inline(f"💾 حفظ الروابط {save_links}", b"toggle_save_links")],
+        [Button.inline("📋 الروابط المنضم لها", b"view_joined_links")],
         [Button.inline("🚫 إدارة المحظورات", b"blacklist_menu")],
         [Button.inline("🗂 إدارة المجموعات", b"manage_groups")],
         [Button.inline("📊 إحصائيات تفصيلية", b"detailed_stats")],
@@ -405,6 +425,12 @@ async def callback_handler(event):
         db.save_setting('auto_join_enabled', SETTINGS['auto_join_enabled'])
         await event.answer(f"✅ الانضمام التلقائي {'مفعل' if SETTINGS['auto_join_enabled'] else 'معطل'}")
         await event.edit("⚙️ الإعدادات المتقدمة:", buttons=advanced_buttons())
+    elif data == "toggle_save_links":
+        SETTINGS['save_joined_links'] = not SETTINGS.get('save_joined_links', True)
+        db.save_setting('save_joined_links', SETTINGS['save_joined_links'])
+        await event.answer(f"✅ حفظ الروابط {'مفعل' if SETTINGS['save_joined_links'] else 'معطل'}")
+        await event.edit("⚙️ الإعدادات المتقدمة:", buttons=advanced_buttons())
+    elif data == "view_joined_links": await show_joined_links(event)
     elif data == "blacklist_menu": await event.edit("🚫 قائمة المحظورات", buttons=blacklist_buttons())
     elif data == "manage_groups": await event.edit("🗂 إدارة المجموعات", buttons=groups_buttons())
     elif data == "detailed_stats": await show_detailed_stats(event)
@@ -441,9 +467,9 @@ async def callback_handler(event):
 # ===== دوال العرض =====
 
 async def show_status(event):
-    accounts = db.get_accounts(); groups = db.get_all_groups(); blacklisted = db.get_blacklisted_groups(); stats = db.get_posting_stats(); replies = db.get_auto_replies()
+    accounts = db.get_accounts(); groups = db.get_all_groups(); blacklisted = db.get_blacklisted_groups(); stats = db.get_posting_stats(); replies = db.get_auto_replies(); joined_links = db.get_joined_links(5)
     active_accounts = len([a for a in accounts if a[2] == 'active'])
-    text = f"📊 **حالة البوت**\n\n👤 **الحسابات:** {active_accounts}/{len(accounts)}\n📨 **المنشورات اليوم:** {stats['total']}\n✅ **الناجح:** {stats['success']}\n❌ **الفاشل:** {stats['failed']}\n📢 **المجموعات:** {len(groups)}\n🚫 **المحظورات:** {len(blacklisted)}\n🤖 **الردود:** {len(replies)}\n⚙️ **الفاصل:** {SETTINGS['interval']} ثانية\n🔄 **النشر:** {'🟢 نشط' if is_posting else '🔴 متوقف'}"
+    text = f"📊 **حالة البوت**\n\n👤 **الحسابات:** {active_accounts}/{len(accounts)}\n📨 **المنشورات اليوم:** {stats['total']}\n✅ **الناجح:** {stats['success']}\n❌ **الفاشل:** {stats['failed']}\n📢 **المجموعات:** {len(groups)}\n🚫 **المحظورات:** {len(blacklisted)}\n🤖 **الردود:** {len(replies)}\n🔗 **الروابط المنضم لها:** {len(joined_links)}\n⚙️ **الفاصل:** {SETTINGS['interval']} ثانية\n🔄 **النشر:** {'🟢 نشط' if is_posting else '🔴 متوقف'}"
     await event.edit(text, buttons=main_buttons())
 
 async def show_stats(event):
@@ -455,7 +481,7 @@ async def show_stats(event):
     await event.edit(text, buttons=main_buttons())
 
 async def show_detailed_stats(event):
-    accounts = db.get_accounts(); groups = db.get_all_groups()
+    accounts = db.get_accounts(); groups = db.get_all_groups(); joined_links = db.get_joined_links()
     text = "📊 **إحصائيات تفصيلية**\n\n**أفضل الحسابات:**\n"
     for phone, _, status, posts, success, failed in sorted(accounts, key=lambda x: x[3], reverse=True)[:5]:
         rate = (success / posts * 100) if posts > 0 else 0
@@ -463,6 +489,7 @@ async def show_detailed_stats(event):
     text += "\n**أفضل المجموعات:**\n"
     for gid, name, members, posts, bl, last in sorted(groups, key=lambda x: x[3], reverse=True)[:5]:
         text += f"• {name[:20]}: {posts} منشور\n"
+    text += f"\n🔗 **إحصائيات الروابط:**\n• إجمالي الروابط المنضم لها: {len(joined_links)}"
     await event.edit(text, buttons=advanced_buttons())
 
 async def show_posting_history(event):
@@ -530,6 +557,15 @@ async def show_queue(event):
 async def show_backup_settings(event):
     backups = sorted(Path(BACKUPS_DIR).glob('backup_*.db')); total_size = sum(f.stat().st_size for f in backups) / 1024 / 1024
     text = f"💾 **إعدادات النسخ الاحتياطي**\n\n📊 عدد النسخ: {len(backups)}\n💾 الحجم: {total_size:.1f} MB\n⚙️ النسخ التلقائي: {'✅' if SETTINGS.get('auto_backup') else '❌'}"
+    await event.edit(text, buttons=advanced_buttons())
+
+async def show_joined_links(event):
+    links = db.get_joined_links(20)
+    if not links: await event.edit("📭 لا توجد روابط منضم لها بعد", buttons=advanced_buttons()); return
+    text = "🔗 **آخر 20 رابط تم الانضمام لها**\n\n"
+    for link, group_name, joined_at, joined_by in links:
+        time_str = datetime.fromisoformat(joined_at).strftime('%Y-%m-%d %H:%M')
+        text += f"• {group_name[:30]}\n  🔗 {link[:30]}...\n  📱 {joined_by[-8:]} | 🕐 {time_str}\n\n"
     await event.edit(text, buttons=advanced_buttons())
 
 # ===== دوال الردود التلقائية =====
@@ -617,7 +653,7 @@ async def show_prediction(event):
 
 async def export_data_handler(event):
     try:
-        data = {"settings": db.get_all_settings(), "messages": db.get_all_messages(), "groups": db.get_all_groups()}
+        data = {"settings": db.get_all_settings(), "messages": db.get_all_messages(), "groups": db.get_all_groups(), "accounts": db.get_accounts(), "joined_links": db.get_joined_links(100)}
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S'); export_file = f"{EXPORTS_DIR}/export_{timestamp}.json"
         with open(export_file, 'w', encoding='utf-8') as f: json.dump(data, f, ensure_ascii=False, indent=2)
         await event.answer(f"✅ تم التصدير بنجاح", alert=True)
@@ -655,17 +691,26 @@ async def refresh_groups_async():
         except: pass
     logger.info(f"✅ تم تحديث {count} مجموعة")
 
-# معالج النصوص
+# معالج النصوص مع ميزة الانضمام التلقائي وحفظ البيانات
 async def text_handler(event):
     state = TEMP.get(ADMIN_ID); text = event.message.text.strip()
+    
+    # معالجة الردود التلقائية في المجموعات
     if event.is_group and event.message.text and not event.out:
         replies = db.get_auto_replies(); msg_text = event.message.text.lower()
         for rid, keyword, response, match_type, active in replies:
             if not active: continue
             if (match_type == 'exact' and msg_text == keyword.lower()) or (match_type == 'contains' and keyword.lower() in msg_text) or (match_type == 'startswith' and msg_text.startswith(keyword.lower())):
                 await event.reply(response); break
+    
+    # معالجة روابط الانضمام التلقائي
     links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)[a-zA-Z0-9_-]+|https?://t\.me/[a-zA-Z0-9_]+)", text)
-    if links and SETTINGS.get('auto_join_enabled', True) and USER_CLIENTS: await handle_auto_join(event, links); return
+    if links and SETTINGS.get('auto_join_enabled', True) and USER_CLIENTS:
+        # حفظ الروابط قبل الانضمام
+        await handle_auto_join_with_save(event, links)
+        return
+    
+    # معالجة حالات الإدخال المختلفة
     if isinstance(state, dict) and state.get("s") == "auto_keyword": await auto_reply_keyword_handler(event, state)
     elif isinstance(state, dict) and state.get("s") == "auto_response": await auto_reply_response_handler(event, state)
     elif state == "msg": MESSAGES["1"] = text; db.save_message("1", text); TEMP.pop(ADMIN_ID); await event.respond("✅ تم حفظ الإعلان!", buttons=main_buttons())
@@ -694,20 +739,52 @@ async def text_handler(event):
         lines = text.split('\n'); count = 0
         for line in lines[:5]:
             link = line.strip()
-            if link and ('t.me' in link or 'telegram' in link): await handle_auto_join(event, [link]); count += 1
-        await event.respond(f"✅ تمت المعالجة"); TEMP.pop(ADMIN_ID)
+            if link and ('t.me' in link or 'telegram' in link): 
+                await handle_auto_join_with_save(event, [link]); count += 1
+        await event.respond(f"✅ تمت معالجة {count} رابط"); TEMP.pop(ADMIN_ID)
     elif state == "phone": await handle_phone_login(event, text)
 
-async def handle_auto_join(event, links):
-    await event.respond(f"⏳ جاري الانضمام..."); success = 0; failed = 0
-    for link in links[:3]:
+# دالة محسنة للانضمام التلقائي مع حفظ البيانات
+async def handle_auto_join_with_save(event, links):
+    await event.respond(f"⏳ جاري الانضمام وحفظ البيانات...")
+    success = 0; failed = 0; saved = 0
+    
+    for link in links[:5]:  # زيادة الحد إلى 5 روابط
         for phone, client in USER_CLIENTS.items():
             try:
-                if "joinchat" in link or "+" in link: await client(ImportChatInviteRequest(link.split('/')[-1].replace('+', '')))
-                else: await client(JoinChannelRequest(link))
-                success += 1; await asyncio.sleep(2)
-            except Exception as e: failed += 1
-    await event.respond(f"📊 **النتيجة:**\n✅ نجاح: {success}\n❌ فشل: {failed}")
+                group_info = None
+                if "joinchat" in link or "+" in link:
+                    hash_part = link.split('/')[-1].replace('+', '')
+                    updates = await client(ImportChatInviteRequest(hash_part))
+                    # محاولة الحصول على معلومات المجموعة
+                    if updates.chats:
+                        chat = updates.chats[0]
+                        group_info = (chat.id, chat.title)
+                else:
+                    # استخراج معرف المجموعة من الرابط
+                    username = link.split('/')[-1]
+                    entity = await client.get_entity(username)
+                    if entity:
+                        await client(JoinChannelRequest(link))
+                        group_info = (entity.id, getattr(entity, 'title', username))
+                
+                success += 1
+                
+                # حفظ الرابط في قاعدة البيانات إذا كانت الميزة مفعلة
+                if SETTINGS.get('save_joined_links', True) and group_info:
+                    group_id, group_name = group_info
+                    db.add_joined_link(link, group_id, group_name[:50], phone)
+                    saved += 1
+                    
+                await asyncio.sleep(2)
+            except Exception as e:
+                failed += 1
+                logger.error(f"فشل انضمام {phone} إلى {link}: {e}")
+    
+    result_text = f"📊 **نتيجة الانضمام:**\n✅ نجاح: {success}\n❌ فشل: {failed}"
+    if saved > 0:
+        result_text += f"\n💾 تم حفظ: {saved} رابط"
+    await event.respond(result_text)
 
 async def handle_phone_login(event, phone):
     client = TelegramClient(StringSession(), API_ID, API_HASH); await client.connect()
@@ -753,32 +830,63 @@ async def poster():
         except: await asyncio.sleep(10)
 
 async def restore_sessions():
+    """استعادة الجلسات المحفوظة من قاعدة البيانات"""
     restored = 0
-    for phone, session_str, status, posts, success, failed in db.get_accounts():
+    accounts = db.get_accounts()
+    logger.info(f"🔍 محاولة استعادة {len(accounts)} حساب...")
+    
+    for account in accounts:
         try:
-            client = TelegramClient(StringSession(session_str), API_ID, API_HASH); await client.connect()
-            if await client.is_user_authorized(): USER_CLIENTS[phone] = client; db.update_account_status(phone, 'active'); restored += 1
-            else: db.update_account_status(phone, 'unauthorized')
-        except: db.update_account_status(phone, 'error')
-    logger.info(f"✅ تم استعادة {restored} حساب")
+            if len(account) < 2: continue
+            phone = account[0]
+            session_str = account[1]
+            
+            if not session_str:
+                logger.warning(f"⚠️ لا توجد جلسة للحساب {phone}")
+                continue
+            
+            client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+            await client.connect()
+            
+            if await client.is_user_authorized():
+                USER_CLIENTS[phone] = client
+                db.update_account_status(phone, 'active')
+                restored += 1
+                logger.success(f"✅ تم استعادة {phone}")
+            else:
+                db.update_account_status(phone, 'unauthorized')
+                logger.warning(f"⚠️ الحساب {phone} غير مصرح به")
+                
+        except Exception as e:
+            logger.error(f"❌ فشل استعادة حساب: {e}")
+            if len(account) > 0:
+                db.update_account_status(account[0], 'error')
+    
+    logger.info(f"✅ تم استعادة {restored} من أصل {len(accounts)} حساب")
+    return restored
 
 async def main():
     global bot
     Thread(target=run_web, daemon=True).start()
     
     print("🚀 جاري تشغيل البوت...")
+    print("👤 ADMIN_ID المستخدم:", ADMIN_ID)
+    print("👤 نوع ADMIN_ID:", type(ADMIN_ID))
+    
+    # استعادة الجلسات المحفوظة
     await restore_sessions()
     
+    # تشغيل البوت
     bot = TelegramClient('bot_session', API_ID, API_HASH)
     await bot.start(bot_token=BOT_TOKEN)
     
-    # ✅ التحقق من البوت
+    # التحقق من البوت
     me = await bot.get_me()
     print(f"✅ البوت متصل: @{me.username}")
     print(f"👤 آيدي البوت: {me.id}")
     print(f"👤 الآيدي المطلوب: {ADMIN_ID}")
     
-    # ✅ معالجات الأحداث هنا
+    # معالجات الأحداث
     @bot.on(events.NewMessage(pattern='/start'))
     async def start(e):
         print(f"📩 استقبلت أمر /start من {e.sender_id}")
