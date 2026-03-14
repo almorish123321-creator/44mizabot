@@ -1237,11 +1237,37 @@ async def main():
     global bot
     Thread(target=run_web, daemon=True).start()
     
-    # استعادة الجلسات المحفوظة
-    await restore_sessions()
-    
-    # تشغيل البوت
-    bot = TelegramClient('bot_session', API_ID, API_HASH)
-    await bot.start(bot_token=BOT_TOKEN)
-    
-    @bot.on(events.NewMessage(pattern='/start'))
+    # استعادة الجلسات
+await restore_sessions()
+
+# تشغيل البوت
+bot = TelegramClient('bot_session', API_ID, API_HASH)
+await bot.start(bot_token=BOT_TOKEN)
+
+@bot.on(events.NewMessage(pattern='/start'))
+async def start(e): 
+    await start_handler(e)
+
+@bot.on(events.CallbackQuery())
+async def callback(e): 
+    await callback_handler(e)
+
+@bot.on(events.NewMessage)
+async def text(e):
+    if e.message.text:
+        if e.sender_id == ADMIN_ID:
+            state = TEMP.get(ADMIN_ID)
+            if isinstance(state, dict) and state.get("s") == "code": 
+                await handle_code_verification(e, state, e.message.text.strip())
+            elif isinstance(state, dict) and state.get("s") == "pass": 
+                await handle_password(e, state, e.message.text.strip())
+            else: 
+                await text_handler(e)
+        elif e.is_group and e.message.text:
+            await text_handler(e)
+
+logger.success("✅ البوت جاهز! أرسل /start")
+logger.info(f"👤 المشرف: {ADMIN_ID}")
+logger.info(f"📊 الإحصائيات: {len(USER_CLIENTS)} حساب نشط")
+
+await bot.run_until_disconnected()
