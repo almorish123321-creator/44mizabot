@@ -1237,24 +1237,11 @@ async def main():
     global bot
     Thread(target=run_web, daemon=True).start()
     
-    # ✅ معالجات الأحداث هنا (داخل الدالة main)
-@bot.on(events.NewMessage(pattern='/start'))  # 👈 هذا كان @bot.o
-async def start(e):
-    await start_handler(e)
-
-@bot.on(events.CallbackQuery())
-async def callback(e):
-    await callback_handler(e)
-
-@bot.on(events.NewMessage)
-async def text(e):
-    if e.message.text and e.sender_id == ADMIN_ID:
-        state = TEMP.get(ADMIN_ID)
-        if isinstance(state, dict) and state.get("s") == "code":
-            await handle_code_verification(e, state, e.message.text.strip())
-        elif isinstance(state, dict) and state.get("s") == "pass":
-            await handle_password(e, state, e.message.text.strip())
-        else:
-            await text_handler(e)
-    elif e.is_group and e.message.text:
-        await text_handler(e)
+    # استعادة الجلسات المحفوظة
+    await restore_sessions()
+    
+    # تشغيل البوت
+    bot = TelegramClient('bot_session', API_ID, API_HASH)
+    await bot.start(bot_token=BOT_TOKEN)
+    
+    # ✅ معالجات الأحداث هنا (مع المسافات البادئة الصحيحة)
