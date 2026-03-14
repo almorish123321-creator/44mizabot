@@ -376,7 +376,7 @@ SETTINGS = {'interval': 3, 'encryption': True, 'auto_join_enabled': True, 'max_g
 SETTINGS.update(db.get_all_settings())
 TEMP = {}
 is_posting = False
-bot = None
+bot = None  # سيتم تعريفه لاحقاً في الدالة main()
 
 # ==================== وظائف مساعدة ====================
 
@@ -1115,7 +1115,7 @@ async def handle_code_verification(event, state, code):
         phone = state["p"]
         await client.sign_in(phone, code)
         USER_CLIENTS[phone] = client
-        session_str = client.session.save()  # ✅ تصحيح هنا
+        session_str = client.session.save()
         db.add_account(phone, session_str)
         await event.respond(f"✅ تم تفعيل الحساب {phone}!")
         TEMP.pop(ADMIN_ID)
@@ -1130,7 +1130,7 @@ async def handle_password(event, state, password):
     try:
         await state["c"].sign_in(password=password)
         USER_CLIENTS[state["p"]] = state["c"]
-        session_str = state["c"].session.save()  # ✅ تصحيح هنا
+        session_str = state["c"].session.save()
         db.add_account(state["p"], session_str)
         await event.respond(f"✅ تم التفعيل بنجاح!")
         TEMP.pop(ADMIN_ID)
@@ -1207,7 +1207,7 @@ async def restore_sessions():
                 continue
                 
             phone = account[0]
-            session_str = account[1]  # ✅ هذا هو المهم!
+            session_str = account[1]
             
             if not session_str:
                 logger.warning(f"⚠️ لا توجد جلسة للحساب {phone}")
@@ -1237,37 +1237,12 @@ async def main():
     global bot
     Thread(target=run_web, daemon=True).start()
     
-    # استعادة الجلسات
-await restore_sessions()
-
-# تشغيل البوت
-bot = TelegramClient('bot_session', API_ID, API_HASH)
-await bot.start(bot_token=BOT_TOKEN)
-
-@bot.on(events.NewMessage(pattern='/start'))
-async def start(e): 
-    await start_handler(e)
-
-@bot.on(events.CallbackQuery())
-async def callback(e): 
-    await callback_handler(e)
-
-@bot.on(events.NewMessage)
-async def text(e):
-    if e.message.text:
-        if e.sender_id == ADMIN_ID:
-            state = TEMP.get(ADMIN_ID)
-            if isinstance(state, dict) and state.get("s") == "code": 
-                await handle_code_verification(e, state, e.message.text.strip())
-            elif isinstance(state, dict) and state.get("s") == "pass": 
-                await handle_password(e, state, e.message.text.strip())
-            else: 
-                await text_handler(e)
-        elif e.is_group and e.message.text:
-            await text_handler(e)
-
-logger.success("✅ البوت جاهز! أرسل /start")
-logger.info(f"👤 المشرف: {ADMIN_ID}")
-logger.info(f"📊 الإحصائيات: {len(USER_CLIENTS)} حساب نشط")
-
-await bot.run_until_disconnected()
+    # استعادة الجلسات المحفوظة
+    await restore_sessions()
+    
+    # تشغيل البوت
+    bot = TelegramClient('bot_session', API_ID, API_HASH)
+    await bot.start(bot_token=BOT_TOKEN)
+    
+    # ✅ معالجات الأحداث هنا (داخل الدالة main)
+    @bot.o
