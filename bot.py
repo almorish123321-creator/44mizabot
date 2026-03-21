@@ -1230,4 +1230,4 @@ async def restore_sessions():
                 logger.success(f"✅ تم استعادة {phone}")
             else:
                 db.update_account_status(phone, 'unauthorized')
-                logger.warning(f"⚠️ 
+                logger.warning(f"⚠️ الرسالة هنا") 
