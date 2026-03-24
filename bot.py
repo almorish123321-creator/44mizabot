@@ -731,16 +731,15 @@ async def callback_handler(event):
             
             db.init_database()
             
-            async def callback_handler(event):
-    global SETTINGS  # ✅ أضف هذا السطر أولاً
-    global is_posting
+     async def callback_handler(event):
+        global SETTINGS
+        global is_posting
     
-    if event.sender_id != ADMIN_ID:
-        return
+        if event.sender_id != ADMIN_ID:
+            return
     
     data = event.data.decode()
     logger.info(f"🖱 نقرة: {data}")
-            
             await event.edit(
                 "✅ **تم حذف قاعدة البيانات بنجاح!**\n\n"
                 "• تم إنشاء نسخة احتياطية\n"
