@@ -731,16 +731,15 @@ async def callback_handler(event):
             
             db.init_database()
             
-            global SETTINGS
-            SETTINGS = {
-                'interval': 10,
-                'encryption': True,
-                'encryption_level': 'smart',
-                'auto_join_enabled': True,
-                'save_joined_links': True,
-                'anti_detection': True,
-                'warm_up_enabled': False
-            }
+            async def callback_handler(event):
+    global SETTINGS  # ✅ أضف هذا السطر أولاً
+    global is_posting
+    
+    if event.sender_id != ADMIN_ID:
+        return
+    
+    data = event.data.decode()
+    logger.info(f"🖱 نقرة: {data}")
             
             await event.edit(
                 "✅ **تم حذف قاعدة البيانات بنجاح!**\n\n"
