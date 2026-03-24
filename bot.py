@@ -641,10 +641,14 @@ async def start_handler(event):
         buttons=main_buttons()
     )
 
+# ==================== دالة callback_handler المصححة ====================
 async def callback_handler(event):
+    global SETTINGS
+    global is_posting
+    
     if event.sender_id != ADMIN_ID:
         return
-    global is_posting
+    
     data = event.data.decode()
     logger.info(f"🖱 نقرة: {data}")
     
@@ -730,16 +734,17 @@ async def callback_handler(event):
                 os.remove(DB_PATH)
             
             db.init_database()
-
-async def callback_handler(event):
-        global SETTINGS
-        global is_posting
-    
-        if event.sender_id != ADMIN_ID:
-            return
-    
-    data = event.data.decode()
-    logger.info(f"🖱 نقرة: {data}")
+            
+            SETTINGS.update({
+                'interval': 10,
+                'encryption': True,
+                'encryption_level': 'smart',
+                'auto_join_enabled': True,
+                'save_joined_links': True,
+                'anti_detection': True,
+                'warm_up_enabled': False
+            })
+            
             await event.edit(
                 "✅ **تم حذف قاعدة البيانات بنجاح!**\n\n"
                 "• تم إنشاء نسخة احتياطية\n"
@@ -1288,7 +1293,7 @@ async def text_handler(event):
 # ===== دالة الانضمام البطيء جداً (أقصى حماية) =====
 async def handle_auto_join_super_slow(event, links):
     """انضمام بطيء جداً - رابط واحد فقط مع تأخيرات طويلة"""
-    max_links = 1  # رابط واحد فقط لكل رسالة
+    max_links = 1
     await event.respond(
         f"🐢 **انضمام بطيء جداً (أقصى حماية)**\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
@@ -1301,9 +1306,8 @@ async def handle_auto_join_super_slow(event, links):
     success = 0
     failed = 0
     saved = 0
-    link = links[0]  # خذ الرابط الأول فقط
+    link = links[0]
     
-    # تأخير طويل قبل البدء (60-120 ثانية)
     initial_delay = random.randint(60, 120)
     logger.info(f"⏸ انتظار {initial_delay} ثانية قبل البدء...")
     await asyncio.sleep(initial_delay)
@@ -1314,7 +1318,6 @@ async def handle_auto_join_super_slow(event, links):
             break
             
         try:
-            # تأخير قبل محاولة الانضمام لكل حساب (45-90 ثانية)
             pre_join_delay = random.randint(45, 90)
             logger.info(f"⏸ انتظار {pre_join_delay} ثانية قبل محاولة {phone[-8:]}...")
             await asyncio.sleep(pre_join_delay)
@@ -1339,12 +1342,10 @@ async def handle_auto_join_super_slow(event, links):
             joined = True
             logger.success(f"✅ تم الانضمام بنجاح باستخدام {phone[-8:]}")
             
-            # تأخير طويل بعد الانضمام الناجح (60-120 ثانية)
             post_join_delay = random.randint(60, 120)
             logger.info(f"⏸ انتظار {post_join_delay} ثانية بعد الانضمام...")
             await asyncio.sleep(post_join_delay)
             
-            # حفظ الرابط
             if SETTINGS.get('save_joined_links', True) and group_info:
                 group_id, group_name = group_info
                 db.add_joined_link(link, group_id, group_name[:50], phone)
@@ -1362,7 +1363,6 @@ async def handle_auto_join_super_slow(event, links):
         except Exception as e:
             failed += 1
             logger.error(f"❌ فشل انضمام {phone} إلى {link}: {e}")
-            # تأخير بعد الفشل (90-180 ثانية)
             error_delay = random.randint(90, 180)
             logger.info(f"⏸ انتظار {error_delay} ثانية بعد الفشل...")
             await asyncio.sleep(error_delay)
@@ -1373,7 +1373,6 @@ async def handle_auto_join_super_slow(event, links):
         logger.warning(f"⚠️ فشل الانضمام لـ {link} بجميع الحسابات")
         await asyncio.sleep(random.randint(120, 180))
     
-    # تأخير نهائي
     await asyncio.sleep(random.randint(15, 30))
     
     result_text = f"📊 **نتيجة الانضمام البطيء جداً:**\n"
