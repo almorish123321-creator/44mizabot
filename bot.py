@@ -730,8 +730,8 @@ async def callback_handler(event):
                 os.remove(DB_PATH)
             
             db.init_database()
-            
-     async def callback_handler(event):
+
+async def callback_handler(event):
         global SETTINGS
         global is_posting
     
