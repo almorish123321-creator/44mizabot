@@ -55,7 +55,7 @@ db_lock = threading.Lock()
 app = Flask(__name__)
 
 @app.route('/')
-def home(): 
+def home():
     return jsonify({'status': 'online', 'msg': '🤖 البوت يعمل بنجاح!', 'time': str(datetime.now())})
 
 @app.route('/health')
@@ -78,47 +78,39 @@ class Logger:
         )
         self.logger = logging.getLogger('Bot')
     
-    def info(self, msg): self.logger.info(msg); print(f"ℹ️ {msg}")
-    def warning(self, msg): self.logger.warning(msg); print(f"⚠️ {msg}")
-    def error(self, msg): self.logger.error(msg); print(f"❌ {msg}")
-    def success(self, msg): self.logger.info(f"✅ {msg}"); print(f"✅ {msg}")
-    def critical(self, msg): self.logger.critical(msg); print(f"💥 {msg}")
+    def info(self, msg):
+        self.logger.info(msg)
+        print(f"ℹ️ {msg}")
+    
+    def warning(self, msg):
+        self.logger.warning(msg)
+        print(f"⚠️ {msg}")
+    
+    def error(self, msg):
+        self.logger.error(msg)
+        print(f"❌ {msg}")
+    
+    def success(self, msg):
+        self.logger.info(f"✅ {msg}")
+        print(f"✅ {msg}")
+    
+    def critical(self, msg):
+        self.logger.critical(msg)
+        print(f"💥 {msg}")
 
 logger = Logger()
 
 # ==================== نظام التشفير الاحترافي ====================
 
 class AdvancedEncryption:
-    """نظام تشفير متقدم يحافظ على وضوح النص مع تجاوز بوتات الحماية"""
-    
     def __init__(self):
         self.invisible_chars = ['\u200B', '\u200C', '\u200D']
-        
-        self.link_alternatives = {
-            't.me': 'تي دوت مي',
-            '@': 'أت',
-        }
-        
-        self.light_synonyms = {
-            'مساعدة': ['مساعدة', 'مساندة', 'دعم'],
-            'تواصل': ['تواصل', 'مراسلة', 'اتصال'],
-            'اسعار': ['أسعار', 'تكلفة', 'رسوم'],
-        }
-        
-        self.link_patterns = [
-            (r't\.me', 't\u200B.me'),
-            (r'@', '@\u200B'),
-        ]
+        self.link_patterns = [(r't\.me', 't\u200B.me'), (r'@', '@\u200B')]
     
     def encrypt_smart(self, text):
-        """تشفير ذكي يحافظ على قراءة النص"""
         result = text
-        
-        # تجزئة الروابط فقط
         for pattern, replacement in self.link_patterns:
             result = re.sub(pattern, replacement, result)
-        
-        # إضافة أحرف غير مرئية بشكل محدود جداً
         if len(text) > 50 and random.random() > 0.7:
             words = result.split()
             for i in range(len(words)):
@@ -126,7 +118,6 @@ class AdvancedEncryption:
                     pos = random.randint(1, max(1, len(words[i])-1))
                     words[i] = words[i][:pos] + random.choice(self.invisible_chars) + words[i][pos:]
             result = ' '.join(words)
-        
         return result
 
 advanced_encryption = AdvancedEncryption()
@@ -151,13 +142,9 @@ class AntiDetection:
             'دعم': ['مساندة', 'متابعة'],
         }
         
-        self.invisible_chars = ['\u200B', '\u200C', '\u200D']
-        
         self.templates = [
             "{}", "✨ {} ✨", "🔹 {}\n🔸 تابعنا للمزيد", "📢 {}\n\n💡 لا تفوت الفرصة"
         ]
-        
-        self.warm_messages = ["👍", "❤️", "🔥"]
     
     def disguise_text(self, text):
         result = text
@@ -204,14 +191,6 @@ class AntiDetection:
             return False, f"Flood wait: {e.seconds}s"
         except Exception as e:
             return False, str(e)
-    
-    def should_send_warm_up(self, group_id):
-        if group_id in self.warmed_groups:
-            return False
-        if random.random() < 0.03:
-            self.warmed_groups.add(group_id)
-            return True
-        return False
 
 anti_detection = AntiDetection()
 
@@ -520,7 +499,6 @@ USER_CLIENTS = {}
 SETTINGS = {
     'interval': 10,
     'encryption': True,
-    'encryption_level': 'smart',
     'auto_join_enabled': True,
     'save_joined_links': True,
     'anti_detection': True,
@@ -641,7 +619,6 @@ async def start_handler(event):
         buttons=main_buttons()
     )
 
-# ==================== دالة callback_handler المصححة ====================
 async def callback_handler(event):
     global SETTINGS
     global is_posting
@@ -700,7 +677,6 @@ async def callback_handler(event):
         else:
             await event.answer("❌ لا توجد رسالة نشطة", alert=True)
     
-    # حذف قاعدة البيانات
     elif data == "delete_database":
         await event.edit(
             "⚠️ **تحذير!** ⚠️\n\n"
@@ -738,7 +714,6 @@ async def callback_handler(event):
             SETTINGS.update({
                 'interval': 10,
                 'encryption': True,
-                'encryption_level': 'smart',
                 'auto_join_enabled': True,
                 'save_joined_links': True,
                 'anti_detection': True,
@@ -766,7 +741,6 @@ async def callback_handler(event):
                 text += f"• {gid}\n"
             await event.edit(text, buttons=advanced_buttons())
     
-    # إدارة الرسائل
     elif data == "manage_messages":
         await event.edit("📝 **إدارة الرسائل**", buttons=messages_buttons())
     elif data == "list_messages":
@@ -789,7 +763,6 @@ async def callback_handler(event):
         await event.answer("✅ تم حذف الرسالة", alert=True)
         await event.edit("📝 إدارة الرسائل", buttons=messages_buttons())
     
-    # الإعدادات المتقدمة
     elif data == "toggle_autojoin":
         SETTINGS['auto_join_enabled'] = not SETTINGS.get('auto_join_enabled', True)
         db.save_setting('auto_join_enabled', SETTINGS['auto_join_enabled'])
@@ -827,7 +800,6 @@ async def callback_handler(event):
     elif data == "group_stats":
         await show_group_stats(event)
     
-    # التقارير
     elif data == "real_reports":
         await event.edit("📊 **التقارير**", buttons=reports_buttons())
     elif data == "real_stats":
@@ -839,7 +811,6 @@ async def callback_handler(event):
     elif data == "links_report":
         await show_links_report(event)
     
-    # التحكم في النشر
     elif data == "start_p":
         if not USER_CLIENTS:
             return await event.answer("❌ لا توجد حسابات!", alert=True)
@@ -1234,7 +1205,6 @@ async def text_handler(event):
     state = TEMP.get(ADMIN_ID)
     text = event.message.text.strip()
     
-    # معالجة إضافة رسالة جديدة
     if state == "new_message":
         msg_id = f"msg_{int(time.time())}"
         db.save_message(msg_id, text, is_active=False)
@@ -1242,11 +1212,9 @@ async def text_handler(event):
         await event.respond(f"✅ **تم إضافة الرسالة!**\n\n📝 {text[:100]}...\n🆔 {msg_id}", buttons=messages_buttons())
         return
     
-    # معالجة إضافة حساب
     elif state == "phone":
         await handle_phone_login(event, text)
     
-    # معالجة ضبط الوقت
     elif state == "time":
         try:
             interval = int(text)
@@ -1260,7 +1228,6 @@ async def text_handler(event):
         except:
             await event.respond("❌ أرسل رقماً فقط")
     
-    # معالجة إضافة للمحظورات
     elif state == "add_blacklist":
         groups = db.search_groups(text)
         if groups:
@@ -1272,7 +1239,6 @@ async def text_handler(event):
         TEMP.pop(ADMIN_ID)
         await event.respond("⚙️ الإعدادات المتقدمة:", buttons=advanced_buttons())
     
-    # معالجة بحث المجموعات
     elif state == "search_groups":
         groups = db.search_groups(text)
         if groups:
@@ -1284,15 +1250,12 @@ async def text_handler(event):
             await event.respond("❌ لا توجد نتائج")
         TEMP.pop(ADMIN_ID)
     
-    # معالجة الروابط (انضمام بطيء جداً - رابط واحد فقط)
     else:
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)[a-zA-Z0-9_-]+|https?://t\.me/[a-zA-Z0-9_]+)", text)
         if links and SETTINGS.get('auto_join_enabled', True) and USER_CLIENTS:
             await handle_auto_join_super_slow(event, links)
 
-# ===== دالة الانضمام البطيء جداً (أقصى حماية) =====
 async def handle_auto_join_super_slow(event, links):
-    """انضمام بطيء جداً - رابط واحد فقط مع تأخيرات طويلة"""
     max_links = 1
     await event.respond(
         f"🐢 **انضمام بطيء جداً (أقصى حماية)**\n"
