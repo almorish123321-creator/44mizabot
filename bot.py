@@ -3,8 +3,8 @@
 
 """
 ╔═══════════════════════════════════════════════════════════════╗
-║     🤖 بوت النشر الخارق - النسخة المتطورة النهائية 🚀        ║
-║     انضمام بطيء جداً + حماية كاملة + تشفير ذكي + قاعدة خارجية║
+║     🤖 بوت النشر الخارق - النسخة النهائية 🚀                 ║
+║     يعمل على Web Service المجاني مع فتح منفذ                 ║
 ╚═══════════════════════════════════════════════════════════════╝
 """
 
@@ -19,7 +19,6 @@ import logging
 import shutil
 import time
 import threading
-import requests
 from datetime import datetime, timedelta
 from pathlib import Path
 from telethon import TelegramClient, events, Button
@@ -37,71 +36,39 @@ API_HASH = os.environ.get('API_HASH', "35e04f65846f09700aac0696a59f1a37")
 BOT_TOKEN = os.environ.get('BOT_TOKEN', "8568132127:AAG-4Mxkj7WxpQcVwUcX6GdGHRAfEMjQs_8")
 ADMIN_ID = int(os.environ.get('ADMIN_ID', 7853478744))
 
-# ==================== إعدادات قاعدة البيانات الخارجية ====================
-# يمكنك استخدام Supabase أو MongoDB أو Turso
-DB_TYPE = os.environ.get('DB_TYPE', 'local')  # local, supabase, mongodb, turso
-
-# Supabase (مجاني 500MB)
-SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
-
-# MongoDB Atlas (مجاني 512MB)
-MONGODB_URI = os.environ.get('MONGODB_URI', '')
-
-# Turso (مجاني 9GB)
-TURSO_URL = os.environ.get('TURSO_URL', '')
-TURSO_TOKEN = os.environ.get('TURSO_TOKEN', '')
-
 # ==================== إعدادات التشغيل ====================
 
 DATA_DIR = "data"
 BACKUPS_DIR = "backups"
 LOGS_DIR = "logs"
-TEMP_DIR = "temp"
-EXPORTS_DIR = "exports"
 DB_PATH = f"{DATA_DIR}/bot_data.db"
 
-for dir_path in [DATA_DIR, BACKUPS_DIR, LOGS_DIR, TEMP_DIR, EXPORTS_DIR]:
+for dir_path in [DATA_DIR, BACKUPS_DIR, LOGS_DIR]:
     os.makedirs(dir_path, exist_ok=True)
 
 # ==================== قفل قاعدة البيانات ====================
 db_lock = threading.Lock()
 
-# ==================== خادم الويب المتطور ====================
+# ==================== خادم الويب (مهم جداً لفتح المنفذ) ====================
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return jsonify({
         'status': 'online',
-        'bot': 'Telegram Poster Bot Pro',
+        'bot': 'Telegram Poster Bot',
         'version': '4.0',
         'time': str(datetime.now()),
         'accounts': len(USER_CLIENTS) if 'USER_CLIENTS' in globals() else 0,
-        'is_posting': is_posting if 'is_posting' in globals() else False,
-        'database': DB_TYPE,
-        'uptime': str(datetime.now() - start_time) if 'start_time' in globals() else '0'
+        'is_posting': is_posting if 'is_posting' in globals() else False
     })
 
 @app.route('/health')
 def health():
-    return jsonify({'status': 'healthy', 'timestamp': str(datetime.now())}), 200
-
-@app.route('/stats')
-def stats():
-    if 'db' in globals():
-        stats = db.get_posting_stats()
-        return jsonify({
-            'total_today': stats['total'],
-            'success': stats['success'],
-            'failed': stats['failed'],
-            'success_rate': f"{stats['success']/(stats['total'] or 1)*100:.1f}%",
-            'accounts': len(db.get_accounts()),
-            'groups': len(db.get_all_groups())
-        })
-    return jsonify({'error': 'Database not ready'}), 503
+    return jsonify({'status': 'healthy'}), 200
 
 def run_web():
+    """تشغيل خادم الويب لفتح المنفذ (مطلوب لـ Render Web Service)"""
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
@@ -125,62 +92,17 @@ class Logger:
 
 logger = Logger()
 
-# ==================== نظام التشفير الاحترافي المتطور ====================
+# ==================== نظام التشفير ====================
 
 class AdvancedEncryption:
-    """نظام تشفير متطور مع تقنيات متعددة لتجاوز بوتات الحماية"""
-    
     def __init__(self):
-        self.invisible_chars = ['\u200B', '\u200C', '\u200D', '\uFEFF', '\u2060', '\u2061', '\u2062', '\u2063']
-        self.arabic_tashkeel = ['َ', 'ُ', 'ِ', 'ً', 'ٌ', 'ٍ', 'ّ', 'ْ']
-        
-        self.link_patterns = [
-            (r't\.me', 't\u200B.me'),
-            (r'@', '@\u200B'),
-            (r'https?://', 'h\u200Bttp\u200Bs://'),
-        ]
-        
-        self.synonyms = {
-            'اشترك': ['انضم', 'تابع', 'كن معنا', 'سجل', 'ادخل', 'شارك'],
-            'قناة': ['مجموعة', 'منصة', 'صفحتنا', 'مكاننا', 'رابطنا'],
-            'دعم': ['مساندة', 'متابعة', 'تفاعل', 'تشجيع'],
-            'رابط': ['وصلة', 'لينك', 'عنوان', 'دليل'],
-            'تواصل': ['مراسلة', 'اتصال', 'راسلنا', 'اكتب لنا'],
-        }
-        
-        self.templates = [
-            "{}",
-            "✨ {} ✨",
-            "🔹 {}\n🔸 تابعنا للمزيد",
-            "📢 {}\n\n💡 لا تفوت الفرصة",
-            "⚡️ {}\n\n📌 للاستفسار تواصل معنا",
-            "🎯 {}\n\n🔥 عرض خاص",
-            "💫 {}\n\n🌟 مميزات لا تنتهي",
-        ]
+        self.invisible_chars = ['\u200B', '\u200C', '\u200D']
+        self.link_patterns = [(r't\.me', 't\u200B.me'), (r'@', '@\u200B')]
     
     def encrypt_smart(self, text):
-        """تشفير ذكي متعدد المستويات يحافظ على قراءة النص"""
         result = text
-        
-        # 1. تجزئة الروابط
         for pattern, replacement in self.link_patterns:
             result = re.sub(pattern, replacement, result)
-        
-        # 2. إضافة تشكيل عربي للتضليل
-        if random.random() > 0.8 and len(text) > 30:
-            words = result.split()
-            for i in range(len(words)):
-                if random.random() > 0.85:
-                    pos = random.randint(1, max(1, len(words[i])-1))
-                    words[i] = words[i][:pos] + random.choice(self.arabic_tashkeel) + words[i][pos:]
-            result = ' '.join(words)
-        
-        # 3. استبدال الكلمات المفتاحية بمرادفات
-        for keyword, replacements in self.synonyms.items():
-            if keyword in result and random.random() > 0.6:
-                result = result.replace(keyword, random.choice(replacements))
-        
-        # 4. إضافة أحرف غير مرئية بشكل محدود
         if len(text) > 50 and random.random() > 0.7:
             words = result.split()
             for i in range(len(words)):
@@ -188,11 +110,6 @@ class AdvancedEncryption:
                     pos = random.randint(1, max(1, len(words[i])-1))
                     words[i] = words[i][:pos] + random.choice(self.invisible_chars) + words[i][pos:]
             result = ' '.join(words)
-        
-        # 5. إضافة إيموجي عشوائي أحياناً
-        if random.random() > 0.9:
-            result = random.choice(self.templates).format(result)
-        
         return result
 
 advanced_encryption = AdvancedEncryption()
@@ -202,26 +119,23 @@ def encrypt_text(text):
         return text
     return advanced_encryption.encrypt_smart(text)
 
-# ==================== كلاس مكافحة الاكتشاف المتطور ====================
+# ==================== كلاس مكافحة الاكتشاف ====================
 
 class AntiDetection:
     def __init__(self):
         self.posted_messages = {}
         self.last_posts = {}
-        self.group_activity = {}
         self.warmed_groups = set()
         
         self.synonyms = {
-            'اشترك': ['انضم', 'تابع', 'كن معنا', 'سجل'],
+            'اشترك': ['انضم', 'تابع', 'كن معنا'],
             'قناة': ['مجموعة', 'منصة', 'صفحتنا'],
-            'دعم': ['مساندة', 'متابعة', 'تفاعل'],
+            'دعم': ['مساندة', 'متابعة'],
         }
         
         self.templates = [
             "{}", "✨ {} ✨", "🔹 {}\n🔸 تابعنا للمزيد", "📢 {}\n\n💡 لا تفوت الفرصة"
         ]
-        
-        self.warm_messages = ["👍", "❤️", "🔥", "👏", "🌟", "✨"]
     
     def disguise_text(self, text):
         result = text
@@ -234,17 +148,15 @@ class AntiDetection:
         return re.sub(r't\.me', 't\u200B.me', text)
     
     def random_delay(self, base_delay=10):
-        """تأخير عشوائي متقدم"""
-        return random.randint(int(base_delay * 0.8), int(base_delay * 2.5))
+        return random.randint(int(base_delay * 0.8), int(base_delay * 1.5))
     
-    def get_variation(self, text, variation_count=8):
-        """توليد تنويعات متعددة"""
+    def get_variation(self, text, variation_count=6):
         variations = set()
         for _ in range(variation_count * 2):
             variant = text
-            if random.random() > 0.5:
-                variant = self.disguise_text(variant)
             if random.random() > 0.6:
+                variant = self.disguise_text(variant)
+            if random.random() > 0.7:
                 variant = self.disguise_link(variant)
             if random.random() > 0.8:
                 variant = random.choice(self.templates).format(variant)
@@ -266,21 +178,10 @@ class AntiDetection:
             self.last_posts[chat_id] = datetime.now()
             return True, "تم النشر بنجاح"
         except FloodWaitError as e:
-            await asyncio.sleep(e.seconds + random.randint(10, 30))
+            await asyncio.sleep(e.seconds)
             return False, f"Flood wait: {e.seconds}s"
         except Exception as e:
             return False, str(e)
-    
-    def should_send_warm_up(self, group_id):
-        if group_id in self.warmed_groups:
-            return False
-        if random.random() < 0.03:
-            self.warmed_groups.add(group_id)
-            return True
-        return False
-    
-    def get_warm_up_message(self):
-        return random.choice(self.warm_messages)
 
 anti_detection = AntiDetection()
 
@@ -313,354 +214,9 @@ class GroupBlacklistManager:
 
 group_blacklist = GroupBlacklistManager()
 
-# ==================== قاعدة البيانات الخارجية (Supabase) ====================
+# ==================== قاعدة البيانات ====================
 
-class SupabaseDB:
-    """قاعدة بيانات سحابية باستخدام Supabase (500MB مجاني)"""
-    
-    def __init__(self):
-        self.connected = False
-        self.client = None
-        self.connect()
-    
-    def connect(self):
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            logger.warning("⚠️ Supabase غير مهيأ، استخدام قاعدة البيانات المحلية")
-            return
-        
-        try:
-            # محاولة استيراد supabase
-            from supabase import create_client, Client
-            self.client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-            self.connected = True
-            self.init_tables()
-            logger.success("✅ تم الاتصال بـ Supabase Cloud (500MB)")
-        except ImportError:
-            logger.warning("⚠️ مكتبة supabase غير مثبتة، استخدم: pip install supabase")
-        except Exception as e:
-            logger.error(f"❌ فشل الاتصال بـ Supabase: {e}")
-    
-    def init_tables(self):
-        """إنشاء الجداول في Supabase"""
-        try:
-            # إنشاء جدول settings
-            self.client.table('settings').insert({'key': '_init', 'value': '{}', 'updated_at': str(datetime.now())}).execute()
-        except:
-            pass  # الجدول موجود مسبقاً
-    
-    def save_setting(self, key, value):
-        if not self.connected:
-            return db_local.save_setting(key, value)
-        try:
-            self.client.table('settings').upsert({
-                'key': key,
-                'value': json.dumps(value),
-                'updated_at': str(datetime.now())
-            }).execute()
-        except Exception as e:
-            logger.error(f"فشل حفظ الإعداد: {e}")
-            return db_local.save_setting(key, value)
-    
-    def get_setting(self, key, default=None):
-        if not self.connected:
-            return db_local.get_setting(key, default)
-        try:
-            result = self.client.table('settings').select('value').eq('key', key).execute()
-            if result.data:
-                return json.loads(result.data[0]['value'])
-            return default
-        except:
-            return db_local.get_setting(key, default)
-    
-    def get_all_settings(self):
-        if not self.connected:
-            return db_local.get_all_settings()
-        try:
-            result = self.client.table('settings').select('*').execute()
-            return {row['key']: json.loads(row['value']) for row in result.data if row['key'] != '_init'}
-        except:
-            return db_local.get_all_settings()
-    
-    def save_message(self, msg_id, content, is_active=False):
-        if not self.connected:
-            return db_local.save_message(msg_id, content, is_active)
-        try:
-            if is_active:
-                self.client.table('messages').update({'is_active': 0}).execute()
-            self.client.table('messages').upsert({
-                'msg_id': msg_id,
-                'content': content,
-                'created_at': str(datetime.now()),
-                'is_active': 1 if is_active else 0
-            }).execute()
-        except:
-            return db_local.save_message(msg_id, content, is_active)
-    
-    def get_all_messages(self):
-        if not self.connected:
-            return db_local.get_all_messages()
-        try:
-            result = self.client.table('messages').select('*').order('created_at', desc=True).execute()
-            return [(row['msg_id'], row['content'], row.get('is_active', 0)) for row in result.data]
-        except:
-            return db_local.get_all_messages()
-    
-    def get_active_message(self):
-        if not self.connected:
-            return db_local.get_active_message()
-        try:
-            result = self.client.table('messages').select('msg_id, content').eq('is_active', 1).execute()
-            if result.data:
-                return {'id': result.data[0]['msg_id'], 'content': result.data[0]['content']}
-            result = self.client.table('messages').select('msg_id, content').order('created_at', desc=True).limit(1).execute()
-            if result.data:
-                self.set_active_message(result.data[0]['msg_id'])
-                return {'id': result.data[0]['msg_id'], 'content': result.data[0]['content']}
-            return None
-        except:
-            return db_local.get_active_message()
-    
-    def set_active_message(self, msg_id):
-        if not self.connected:
-            return db_local.set_active_message(msg_id)
-        try:
-            self.client.table('messages').update({'is_active': 0}).execute()
-            self.client.table('messages').update({'is_active': 1}).eq('msg_id', msg_id).execute()
-        except:
-            return db_local.set_active_message(msg_id)
-    
-    def delete_message(self, msg_id):
-        if not self.connected:
-            return db_local.delete_message(msg_id)
-        try:
-            self.client.table('messages').delete().eq('msg_id', msg_id).execute()
-        except:
-            return db_local.delete_message(msg_id)
-    
-    def add_account(self, phone, session_str):
-        if not self.connected:
-            return db_local.add_account(phone, session_str)
-        try:
-            self.client.table('accounts').upsert({
-                'phone': phone,
-                'session_str': session_str,
-                'added_at': str(datetime.now()),
-                'last_active': str(datetime.now()),
-                'status': 'active',
-                'total_posts': 0,
-                'success_posts': 0,
-                'failed_posts': 0
-            }).execute()
-            logger.success(f"✅ تم حفظ الحساب {phone} في السحابة")
-        except:
-            return db_local.add_account(phone, session_str)
-    
-    def get_accounts(self):
-        if not self.connected:
-            return db_local.get_accounts()
-        try:
-            result = self.client.table('accounts').select('*').order('added_at', desc=True).execute()
-            return [(row['phone'], row['status'], row.get('total_posts', 0), row.get('success_posts', 0), row.get('failed_posts', 0)) for row in result.data]
-        except:
-            return db_local.get_accounts()
-    
-    def remove_account(self, phone):
-        if not self.connected:
-            return db_local.remove_account(phone)
-        try:
-            self.client.table('accounts').delete().eq('phone', phone).execute()
-        except:
-            return db_local.remove_account(phone)
-    
-    def update_account_status(self, phone, status):
-        if not self.connected:
-            return db_local.update_account_status(phone, status)
-        try:
-            self.client.table('accounts').update({'status': status, 'last_active': str(datetime.now())}).eq('phone', phone).execute()
-        except:
-            return db_local.update_account_status(phone, status)
-    
-    def increment_account_posts(self, phone, success=True):
-        if not self.connected:
-            return db_local.increment_account_posts(phone, success)
-        try:
-            if success:
-                self.client.rpc('increment_posts', {'phone_input': phone, 'field': 'total_posts'}).execute()
-                self.client.rpc('increment_posts', {'phone_input': phone, 'field': 'success_posts'}).execute()
-            else:
-                self.client.rpc('increment_posts', {'phone_input': phone, 'field': 'total_posts'}).execute()
-                self.client.rpc('increment_posts', {'phone_input': phone, 'field': 'failed_posts'}).execute()
-        except:
-            return db_local.increment_account_posts(phone, success)
-    
-    def add_group(self, group_id, group_name, group_username, group_type, members_count, added_by):
-        if not self.connected:
-            return db_local.add_group(group_id, group_name, group_username, group_type, members_count, added_by)
-        try:
-            self.client.table('groups').upsert({
-                'group_id': str(group_id),
-                'group_name': group_name or "بدون اسم",
-                'group_username': group_username or "",
-                'group_type': group_type,
-                'members_count': members_count or 0,
-                'added_by': added_by,
-                'added_at': str(datetime.now()),
-                'post_count': 0,
-                'is_blacklisted': 0
-            }).execute()
-        except:
-            return db_local.add_group(group_id, group_name, group_username, group_type, members_count, added_by)
-    
-    def update_group_post(self, group_id):
-        if not self.connected:
-            return db_local.update_group_post(group_id)
-        try:
-            self.client.rpc('increment_group_post', {'group_id_input': str(group_id)}).execute()
-        except:
-            return db_local.update_group_post(group_id)
-    
-    def blacklist_group(self, group_id):
-        if not self.connected:
-            return db_local.blacklist_group(group_id)
-        try:
-            self.client.table('groups').update({'is_blacklisted': 1}).eq('group_id', str(group_id)).execute()
-        except:
-            return db_local.blacklist_group(group_id)
-    
-    def whitelist_group(self, group_id):
-        if not self.connected:
-            return db_local.whitelist_group(group_id)
-        try:
-            self.client.table('groups').update({'is_blacklisted': 0}).eq('group_id', str(group_id)).execute()
-        except:
-            return db_local.whitelist_group(group_id)
-    
-    def get_all_groups(self):
-        if not self.connected:
-            return db_local.get_all_groups()
-        try:
-            result = self.client.table('groups').select('*').order('post_count', desc=True).execute()
-            return [(row['group_id'], row['group_name'], row.get('members_count', 0), row.get('post_count', 0), row.get('is_blacklisted', 0), row.get('last_post')) for row in result.data]
-        except:
-            return db_local.get_all_groups()
-    
-    def get_blacklisted_groups(self):
-        if not self.connected:
-            return db_local.get_blacklisted_groups()
-        try:
-            result = self.client.table('groups').select('group_id, group_name').eq('is_blacklisted', 1).execute()
-            return [(row['group_id'], row['group_name']) for row in result.data]
-        except:
-            return db_local.get_blacklisted_groups()
-    
-    def search_groups(self, query):
-        if not self.connected:
-            return db_local.search_groups(query)
-        try:
-            result = self.client.table('groups').select('group_id, group_name, members_count').ilike('group_name', f'%{query}%').limit(20).execute()
-            return [(row['group_id'], row['group_name'], row.get('members_count', 0)) for row in result.data]
-        except:
-            return db_local.search_groups(query)
-    
-    def log_post(self, phone, group_id, group_name, status='success', error=None):
-        if not self.connected:
-            return db_local.log_post(phone, group_id, group_name, status, error)
-        try:
-            self.client.table('posting_history').insert({
-                'phone': phone,
-                'group_id': str(group_id),
-                'group_name': group_name[:50],
-                'sent_at': str(datetime.now()),
-                'status': status,
-                'error': error
-            }).execute()
-            if status == 'success':
-                self.increment_account_posts(phone, success=True)
-                self.update_group_post(group_id)
-            else:
-                self.increment_account_posts(phone, success=False)
-        except:
-            return db_local.log_post(phone, group_id, group_name, status, error)
-    
-    def get_posting_stats(self, hours=24):
-        if not self.connected:
-            return db_local.get_posting_stats(hours)
-        try:
-            since = (datetime.now() - timedelta(hours=hours)).isoformat()
-            total = self.client.table('posting_history').select('*', count='exact').gte('sent_at', since).execute()
-            success = self.client.table('posting_history').select('*', count='exact').gte('sent_at', since).eq('status', 'success').execute()
-            return {'total': total.count, 'success': success.count, 'failed': total.count - success.count}
-        except:
-            return db_local.get_posting_stats(hours)
-    
-    def get_recent_posts(self, limit=10):
-        if not self.connected:
-            return db_local.get_recent_posts(limit)
-        try:
-            result = self.client.table('posting_history').select('phone, group_name, status, sent_at').order('sent_at', desc=True).limit(limit).execute()
-            return [(row['phone'], row['group_name'], row['status'], row['sent_at']) for row in result.data]
-        except:
-            return db_local.get_recent_posts(limit)
-    
-    def add_joined_link(self, link, group_id, group_name, joined_by):
-        if not self.connected:
-            return db_local.add_joined_link(link, group_id, group_name, joined_by)
-        try:
-            self.client.table('joined_links').insert({
-                'link': link,
-                'group_id': str(group_id),
-                'group_name': group_name[:50],
-                'joined_at': str(datetime.now()),
-                'joined_by': joined_by
-            }).execute()
-        except:
-            return db_local.add_joined_link(link, group_id, group_name, joined_by)
-    
-    def get_joined_links(self, limit=100):
-        if not self.connected:
-            return db_local.get_joined_links(limit)
-        try:
-            result = self.client.table('joined_links').select('link, group_name, joined_at, joined_by').order('joined_at', desc=True).limit(limit).execute()
-            return [(row['link'], row['group_name'], row['joined_at'], row['joined_by']) for row in result.data]
-        except:
-            return db_local.get_joined_links(limit)
-    
-    def get_joined_links_count(self):
-        if not self.connected:
-            return db_local.get_joined_links_count()
-        try:
-            result = self.client.table('joined_links').select('*', count='exact').execute()
-            return result.count
-        except:
-            return db_local.get_joined_links_count()
-    
-    def create_backup(self):
-        """نسخ احتياطي للبيانات من السحابة"""
-        if not self.connected:
-            return db_local.create_backup()
-        try:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_file = f"{BACKUPS_DIR}/cloud_backup_{timestamp}.json"
-            
-            tables = ['settings', 'messages', 'accounts', 'groups', 'posting_history', 'joined_links']
-            data = {}
-            
-            for table in tables:
-                result = self.client.table(table).select('*').execute()
-                data[table] = result.data
-            
-            with open(backup_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, ensure_ascii=False, indent=2, default=str)
-            
-            logger.success(f"✅ تم إنشاء نسخة احتياطية سحابية: {backup_file}")
-            return backup_file
-        except Exception as e:
-            logger.error(f"❌ فشل إنشاء النسخة الاحتياطية: {e}")
-            return db_local.create_backup()
-
-# ==================== قاعدة البيانات المحلية ====================
-
-class LocalDatabase:
+class Database:
     def __init__(self):
         self.db_path = DB_PATH
         self.init_database()
@@ -926,22 +482,7 @@ class LocalDatabase:
                 old.unlink()
         return backup_file
 
-# ==================== اختيار قاعدة البيانات ====================
-
-db_local = LocalDatabase()
-
-# محاولة استخدام قاعدة البيانات السحابية
-if DB_TYPE == 'supabase' and SUPABASE_URL and SUPABASE_KEY:
-    db_cloud = SupabaseDB()
-    if db_cloud.connected:
-        db = db_cloud
-        logger.success("✅ استخدام قاعدة البيانات السحابية Supabase")
-    else:
-        db = db_local
-        logger.info("📁 استخدام قاعدة البيانات المحلية SQLite")
-else:
-    db = db_local
-    logger.info("📁 استخدام قاعدة البيانات المحلية SQLite")
+db = Database()
 
 # ==================== المتغيرات العامة ====================
 
@@ -952,9 +493,7 @@ SETTINGS = {
     'auto_join_enabled': True,
     'save_joined_links': True,
     'anti_detection': True,
-    'warm_up_enabled': False,
-    'slow_mode': True,
-    'max_links_per_join': 1
+    'warm_up_enabled': False
 }
 SETTINGS.update(db.get_all_settings())
 TEMP = {}
@@ -988,7 +527,7 @@ def main_buttons():
         [Button.inline(f"🎭 مكافحة الكشف: {anti_status}", b"toggle_anti")],
         [Button.inline("📢 المجموعات", b"view_chats"), Button.inline("⚙️ إعدادات متقدمة", b"advanced")],
         [Button.inline("📈 إحصائيات", b"stats"), Button.inline("🔗 الروابط", b"view_joined_links")],
-        [Button.inline("📊 تقارير", b"real_reports"), Button.inline("🗄️ قاعدة البيانات", b"db_info")]
+        [Button.inline("📊 تقارير", b"real_reports")]
     ]
 
 def messages_buttons():
@@ -1005,14 +544,12 @@ def advanced_buttons():
     save_links = "✅" if SETTINGS.get('save_joined_links', True) else "❌"
     anti_detect = "✅" if SETTINGS.get('anti_detection', True) else "❌"
     warm_up = "✅" if SETTINGS.get('warm_up_enabled', True) else "❌"
-    slow_mode = "🐢" if SETTINGS.get('slow_mode', True) else "⚡"
     
     return [
         [Button.inline(f"🤖 انضمام تلقائي {auto_join}", b"toggle_autojoin")],
         [Button.inline(f"💾 حفظ الروابط {save_links}", b"toggle_save_links")],
         [Button.inline(f"🎭 مكافحة الكشف {anti_detect}", b"toggle_anti")],
         [Button.inline(f"🔥 تسخين المجموعات {warm_up}", b"toggle_warmup")],
-        [Button.inline(f"🐢 الوضع البطيء {slow_mode}", b"toggle_slow_mode")],
         [Button.inline("🗑️ حذف قاعدة البيانات", b"delete_database")],
         [Button.inline(f"🚫 محظورات: {group_blacklist.get_banned_count()}", b"view_temp_blacklist")],
         [Button.inline("🚫 إدارة المحظورات", b"blacklist_menu")],
@@ -1058,19 +595,16 @@ async def start_handler(event):
     joined_links = db.get_joined_links_count()
     active_msg = db.get_active_message()
     
-    db_type = "☁️ سحابية" if DB_TYPE == 'supabase' and SUPABASE_URL else "📁 محلية"
-    
     await event.respond(
-        f"👋 **أهلاً بك في بوت النشر الخارق المتطور!**\n\n"
+        f"👋 **أهلاً بك في بوت النشر الخارق!**\n\n"
         f"📊 **الإحصائيات:**\n"
         f"• الحسابات: {len(accounts)}\n"
         f"• المجموعات: {len(groups)}\n"
         f"• المحظورات: {len(db.get_blacklisted_groups())}\n"
         f"• الروابط المنضم لها: {joined_links}\n"
         f"• الرسائل المحفوظة: {len(db.get_all_messages())}\n\n"
-        f"🗄️ **قاعدة البيانات:** {db_type}\n"
         f"🛡 **مكافحة الكشف:** {'مفعلة' if SETTINGS.get('anti_detection', True) else 'معطلة'}\n"
-        f"🐢 **انضمام بطيء:** {'مفعل' if SETTINGS.get('slow_mode', True) else 'معطل'}\n\n"
+        f"🐢 **انضمام بطيء:** مفعل (رابط واحد كل 2-4 دقائق)\n\n"
         f"📨 **الرسالة النشطة:**\n{active_msg['content'][:100] if active_msg else 'لا توجد'}\n\n"
         f"استخدم الأزرار للتحكم:", 
         buttons=main_buttons()
@@ -1115,15 +649,6 @@ async def callback_handler(event):
         db.save_setting('warm_up_enabled', SETTINGS['warm_up_enabled'])
         await event.answer(f"✅ تسخين المجموعات {'مفعل' if SETTINGS['warm_up_enabled'] else 'معطل'}")
         await event.edit("⚙️ الإعدادات المتقدمة:", buttons=advanced_buttons())
-    elif data == "toggle_slow_mode":
-        SETTINGS['slow_mode'] = not SETTINGS.get('slow_mode', True)
-        db.save_setting('slow_mode', SETTINGS['slow_mode'])
-        mode = "بطيء جداً 🐢" if SETTINGS['slow_mode'] else "سريع ⚡"
-        await event.answer(f"✅ تم ضبط الوضع على {mode}")
-        await event.edit("⚙️ الإعدادات المتقدمة:", buttons=advanced_buttons())
-    elif data == "db_info":
-        db_type = "☁️ Supabase" if DB_TYPE == 'supabase' and SUPABASE_URL else "📁 SQLite محلي"
-        await event.answer(f"🗄️ قاعدة البيانات: {db_type}", alert=True)
     elif data == "view_chats":
         await show_groups(event)
     elif data == "advanced":
@@ -1143,7 +668,6 @@ async def callback_handler(event):
         else:
             await event.answer("❌ لا توجد رسالة نشطة", alert=True)
     
-    # حذف قاعدة البيانات
     elif data == "delete_database":
         await event.edit(
             "⚠️ **تحذير!** ⚠️\n\n"
@@ -1184,8 +708,7 @@ async def callback_handler(event):
                 'auto_join_enabled': True,
                 'save_joined_links': True,
                 'anti_detection': True,
-                'warm_up_enabled': False,
-                'slow_mode': True
+                'warm_up_enabled': False
             })
             
             await event.edit(
@@ -1209,7 +732,6 @@ async def callback_handler(event):
                 text += f"• {gid}\n"
             await event.edit(text, buttons=advanced_buttons())
     
-    # إدارة الرسائل
     elif data == "manage_messages":
         await event.edit("📝 **إدارة الرسائل**", buttons=messages_buttons())
     elif data == "list_messages":
@@ -1232,7 +754,6 @@ async def callback_handler(event):
         await event.answer("✅ تم حذف الرسالة", alert=True)
         await event.edit("📝 إدارة الرسائل", buttons=messages_buttons())
     
-    # الإعدادات المتقدمة
     elif data == "toggle_autojoin":
         SETTINGS['auto_join_enabled'] = not SETTINGS.get('auto_join_enabled', True)
         db.save_setting('auto_join_enabled', SETTINGS['auto_join_enabled'])
@@ -1270,7 +791,6 @@ async def callback_handler(event):
     elif data == "group_stats":
         await show_group_stats(event)
     
-    # التقارير
     elif data == "real_reports":
         await event.edit("📊 **التقارير**", buttons=reports_buttons())
     elif data == "real_stats":
@@ -1282,7 +802,6 @@ async def callback_handler(event):
     elif data == "links_report":
         await show_links_report(event)
     
-    # التحكم في النشر
     elif data == "start_p":
         if not USER_CLIENTS:
             return await event.answer("❌ لا توجد حسابات!", alert=True)
@@ -1467,8 +986,7 @@ async def show_status(event):
     text += f"📝 **الرسائل:** {messages_count}\n"
     text += f"⚙️ **الفاصل:** {SETTINGS['interval']} ثانية\n"
     text += f"🎭 **مكافحة الكشف:** {'🟢 مفعلة' if SETTINGS.get('anti_detection', True) else '🔴 معطلة'}\n"
-    text += f"🐢 **انضمام بطيء:** {'مفعل' if SETTINGS.get('slow_mode', True) else 'معطل'}\n"
-    text += f"🗄️ **قاعدة البيانات:** {'☁️ سحابية' if DB_TYPE == 'supabase' and SUPABASE_URL else '📁 محلية'}\n"
+    text += f"🐢 **انضمام بطيء:** مفعل (رابط واحد كل 2-4 دقائق)\n"
     text += f"🔄 **النشر:** {'🟢 نشط' if is_posting else '🔴 متوقف'}\n"
     
     if active_msg:
@@ -1678,7 +1196,6 @@ async def text_handler(event):
     state = TEMP.get(ADMIN_ID)
     text = event.message.text.strip()
     
-    # معالجة إضافة رسالة جديدة
     if state == "new_message":
         msg_id = f"msg_{int(time.time())}"
         db.save_message(msg_id, text, is_active=False)
@@ -1686,11 +1203,9 @@ async def text_handler(event):
         await event.respond(f"✅ **تم إضافة الرسالة!**\n\n📝 {text[:100]}...\n🆔 {msg_id}", buttons=messages_buttons())
         return
     
-    # معالجة إضافة حساب
     elif state == "phone":
         await handle_phone_login(event, text)
     
-    # معالجة ضبط الوقت
     elif state == "time":
         try:
             interval = int(text)
@@ -1704,7 +1219,6 @@ async def text_handler(event):
         except:
             await event.respond("❌ أرسل رقماً فقط")
     
-    # معالجة إضافة للمحظورات
     elif state == "add_blacklist":
         groups = db.search_groups(text)
         if groups:
@@ -1716,7 +1230,6 @@ async def text_handler(event):
         TEMP.pop(ADMIN_ID)
         await event.respond("⚙️ الإعدادات المتقدمة:", buttons=advanced_buttons())
     
-    # معالجة بحث المجموعات
     elif state == "search_groups":
         groups = db.search_groups(text)
         if groups:
@@ -1728,22 +1241,18 @@ async def text_handler(event):
             await event.respond("❌ لا توجد نتائج")
         TEMP.pop(ADMIN_ID)
     
-    # معالجة الروابط (انضمام بطيء جداً)
     else:
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)[a-zA-Z0-9_-]+|https?://t\.me/[a-zA-Z0-9_]+)", text)
         if links and SETTINGS.get('auto_join_enabled', True) and USER_CLIENTS:
             await handle_auto_join_super_slow(event, links)
 
-# ===== دالة الانضمام البطيء جداً =====
 async def handle_auto_join_super_slow(event, links):
-    """انضمام بطيء جداً مع حماية قصوى"""
-    max_links = 1 if SETTINGS.get('slow_mode', True) else min(len(links), 2)
-    
+    max_links = 1
     await event.respond(
-        f"🐢 **انضمام {'بطيء جداً' if SETTINGS.get('slow_mode', True) else 'سريع'}**\n"
+        f"🐢 **انضمام بطيء جداً (أقصى حماية)**\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📌 عدد الروابط: {max_links}\n"
-        f"⏱ الوقت المتوقع: {max_links * 2}-{max_links * 4} دقائق\n"
+        f"📌 سيتم معالجة رابط واحد فقط\n"
+        f"⏱ الوقت المتوقع: 2-4 دقائق\n"
         f"🛡 هذا الإعداد يحمي الحسابات من الحظر\n\n"
         f"جاري البدء..."
     )
@@ -1751,86 +1260,81 @@ async def handle_auto_join_super_slow(event, links):
     success = 0
     failed = 0
     saved = 0
+    link = links[0]
     
-    for i, link in enumerate(links[:max_links]):
-        if i > 0 and SETTINGS.get('slow_mode', True):
-            delay = random.randint(60, 120)
-            logger.info(f"⏸ انتظار {delay} ثانية قبل الرابط التالي...")
-            await asyncio.sleep(delay)
-        
-        joined = False
-        for phone, client in USER_CLIENTS.items():
-            if joined:
-                break
-                
-            try:
-                if SETTINGS.get('slow_mode', True):
-                    pre_join_delay = random.randint(30, 60)
-                    logger.info(f"⏸ انتظار {pre_join_delay} ثانية قبل محاولة {phone[-8:]}...")
-                    await asyncio.sleep(pre_join_delay)
-                
-                group_info = None
-                if "joinchat" in link or "+" in link:
-                    hash_part = link.split('/')[-1].replace('+', '')
-                    logger.info(f"🔗 محاولة الانضمام عبر رابط دعوة...")
-                    updates = await client(ImportChatInviteRequest(hash_part))
-                    if updates.chats:
-                        chat = updates.chats[0]
-                        group_info = (chat.id, chat.title)
-                else:
-                    username = link.split('/')[-1]
-                    logger.info(f"🔗 محاولة الانضمام إلى @{username}...")
-                    entity = await client.get_entity(username)
-                    if entity:
-                        await client(JoinChannelRequest(link))
-                        group_info = (entity.id, getattr(entity, 'title', username))
-                
-                success += 1
-                joined = True
-                logger.success(f"✅ تم الانضمام بنجاح باستخدام {phone[-8:]}")
-                
-                if SETTINGS.get('slow_mode', True):
-                    post_join_delay = random.randint(45, 90)
-                    logger.info(f"⏸ انتظار {post_join_delay} ثانية بعد الانضمام...")
-                    await asyncio.sleep(post_join_delay)
-                
-                if SETTINGS.get('save_joined_links', True) and group_info:
-                    group_id, group_name = group_info
-                    db.add_joined_link(link, group_id, group_name[:50], phone)
-                    saved += 1
-                    logger.success(f"💾 تم حفظ {group_name[:30]} في قاعدة البيانات")
-                
-                break
-                
-            except FloodWaitError as e:
-                wait_time = e.seconds + random.randint(30, 60)
-                logger.warning(f"⏳ FloodWait: انتظار {wait_time} ثانية...")
-                await asyncio.sleep(wait_time)
-                continue
-                
-            except Exception as e:
-                failed += 1
-                logger.error(f"❌ فشل انضمام {phone} إلى {link}: {e}")
-                if SETTINGS.get('slow_mode', True):
-                    error_delay = random.randint(60, 120)
-                    logger.info(f"⏸ انتظار {error_delay} ثانية بعد الفشل...")
-                    await asyncio.sleep(error_delay)
-                continue
-        
-        if not joined:
+    initial_delay = random.randint(60, 120)
+    logger.info(f"⏸ انتظار {initial_delay} ثانية قبل البدء...")
+    await asyncio.sleep(initial_delay)
+    
+    joined = False
+    for phone, client in USER_CLIENTS.items():
+        if joined:
+            break
+            
+        try:
+            pre_join_delay = random.randint(45, 90)
+            logger.info(f"⏸ انتظار {pre_join_delay} ثانية قبل محاولة {phone[-8:]}...")
+            await asyncio.sleep(pre_join_delay)
+            
+            group_info = None
+            if "joinchat" in link or "+" in link:
+                hash_part = link.split('/')[-1].replace('+', '')
+                logger.info(f"🔗 محاولة الانضمام عبر رابط دعوة...")
+                updates = await client(ImportChatInviteRequest(hash_part))
+                if updates.chats:
+                    chat = updates.chats[0]
+                    group_info = (chat.id, chat.title)
+            else:
+                username = link.split('/')[-1]
+                logger.info(f"🔗 محاولة الانضمام إلى @{username}...")
+                entity = await client.get_entity(username)
+                if entity:
+                    await client(JoinChannelRequest(link))
+                    group_info = (entity.id, getattr(entity, 'title', username))
+            
+            success += 1
+            joined = True
+            logger.success(f"✅ تم الانضمام بنجاح باستخدام {phone[-8:]}")
+            
+            post_join_delay = random.randint(60, 120)
+            logger.info(f"⏸ انتظار {post_join_delay} ثانية بعد الانضمام...")
+            await asyncio.sleep(post_join_delay)
+            
+            if SETTINGS.get('save_joined_links', True) and group_info:
+                group_id, group_name = group_info
+                db.add_joined_link(link, group_id, group_name[:50], phone)
+                saved += 1
+                logger.success(f"💾 تم حفظ {group_name[:30]} في قاعدة البيانات")
+            
+            break
+            
+        except FloodWaitError as e:
+            wait_time = e.seconds + random.randint(45, 90)
+            logger.warning(f"⏳ FloodWait: انتظار {wait_time} ثانية...")
+            await asyncio.sleep(wait_time)
+            continue
+            
+        except Exception as e:
             failed += 1
-            logger.warning(f"⚠️ فشل الانضمام لـ {link} بجميع الحسابات")
-            if SETTINGS.get('slow_mode', True):
-                await asyncio.sleep(random.randint(90, 150))
+            logger.error(f"❌ فشل انضمام {phone} إلى {link}: {e}")
+            error_delay = random.randint(90, 180)
+            logger.info(f"⏸ انتظار {error_delay} ثانية بعد الفشل...")
+            await asyncio.sleep(error_delay)
+            continue
     
-    await asyncio.sleep(random.randint(10, 20))
+    if not joined:
+        failed += 1
+        logger.warning(f"⚠️ فشل الانضمام لـ {link} بجميع الحسابات")
+        await asyncio.sleep(random.randint(120, 180))
     
-    result_text = f"📊 **نتيجة الانضمام:**\n"
+    await asyncio.sleep(random.randint(15, 30))
+    
+    result_text = f"📊 **نتيجة الانضمام البطيء جداً:**\n"
     result_text += f"━━━━━━━━━━━━━━━━━━━━\n"
     result_text += f"✅ نجاح: {success}\n"
     result_text += f"❌ فشل: {failed}\n"
-    result_text += f"⚡ سرعة: {'بطيئة جداً 🐢' if SETTINGS.get('slow_mode', True) else 'عادية'}\n"
-    result_text += f"🛡 الحسابات محمية"
+    result_text += f"⏱ تم الانضمام بسرعة بطيئة جداً\n"
+    result_text += f"🛡 الحسابات محمية بالكامل"
     if saved > 0:
         result_text += f"\n💾 تم حفظ: {saved} رابط"
     
@@ -1874,10 +1378,10 @@ async def handle_password(event, state, password):
     except Exception as e:
         await event.respond(f"❌ خطأ: {str(e)[:100]}")
 
-# ===== دالة النشر المتطورة =====
+# ===== دالة النشر =====
 async def poster():
     global is_posting
-    logger.info("🚀 بدء النشر بنظام مكافحة الكشف المتطور...")
+    logger.info("🚀 بدء النشر بنظام مكافحة الكشف...")
     
     stats = {'total': 0, 'success': 0, 'failed': 0}
     
@@ -1896,13 +1400,12 @@ async def poster():
             original_text = active_msg['content']
             
             if SETTINGS.get('anti_detection', True):
-                variations = anti_detection.get_variation(original_text, 8)
+                variations = anti_detection.get_variation(original_text, 6)
                 logger.info(f"📝 تم توليد {len(variations)} تنويع")
             else:
                 variations = [original_text]
             
             accounts_list = list(USER_CLIENTS.items())
-            random.shuffle(accounts_list)  # تدوير الحسابات
             
             for phone, client in accounts_list:
                 if not is_posting:
@@ -1916,7 +1419,7 @@ async def poster():
                         if dialog.is_group and groups_sent < 50:
                             groups_list.append(dialog)
                     
-                    random.shuffle(groups_list)  # خلط ترتيب المجموعات
+                    random.shuffle(groups_list)
                     
                     for dialog in groups_list:
                         if not is_posting:
@@ -2031,11 +1534,11 @@ async def main():
     global bot, start_time
     start_time = datetime.now()
     
+    # ✅ هذا السطر مهم جداً لفتح المنفذ على Render
     Thread(target=run_web, daemon=True).start()
     
-    print("🚀 جاري تشغيل البوت المتطور...")
+    print("🚀 جاري تشغيل البوت...")
     print("👤 ADMIN_ID المستخدم:", ADMIN_ID)
-    print(f"🗄️ نوع قاعدة البيانات: {DB_TYPE}")
     
     await restore_sessions()
     
@@ -2067,8 +1570,8 @@ async def main():
         elif e.is_group and e.message.text:
             await text_handler(e)
     
-    logger.success("✅ البوت المتطور جاهز! أرسل /start")
-    print("🎉 البوت يعمل مع نظام مكافحة الكشف المتطور والانضمام البطيء")
+    logger.success("✅ البوت جاهز! أرسل /start")
+    print("🎉 البوت يعمل مع نظام الانضمام البطيء جداً")
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
