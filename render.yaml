@@ -13,5 +13,3 @@ services:
         value: 8568132127:AAG-4Mxkj7WxpQcVwUcX6GdGHRAfEMjQs_8
       - key: ADMIN_ID
         value: 7853478744
-      - key: DB_TYPE
-        value: local
