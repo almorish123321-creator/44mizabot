@@ -4,7 +4,7 @@
 """
 ╔═══════════════════════════════════════════════════════════════╗
 ║     🤖 بوت النشر الخارق - النسخة النهائية 🚀                 ║
-║     يعمل على Web Service المجاني مع فتح منفذ                 ║
+║     مع فتح المنفذ التلقائي + انضمام بطيء + حماية كاملة      ║
 ╚═══════════════════════════════════════════════════════════════╝
 """
 
@@ -49,7 +49,7 @@ for dir_path in [DATA_DIR, BACKUPS_DIR, LOGS_DIR]:
 # ==================== قفل قاعدة البيانات ====================
 db_lock = threading.Lock()
 
-# ==================== خادم الويب (مهم جداً لفتح المنفذ) ====================
+# ==================== خادم الويب (مع تأكيد فتح المنفذ) ====================
 app = Flask(__name__)
 
 @app.route('/')
@@ -68,9 +68,14 @@ def health():
     return jsonify({'status': 'healthy'}), 200
 
 def run_web():
-    """تشغيل خادم الويب لفتح المنفذ (مطلوب لـ Render Web Service)"""
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    """تشغيل خادم الويب وفتح المنفذ"""
+    try:
+        port = int(os.environ.get('PORT', 10000))
+        print(f"🌐 بدء خادم الويب على المنفذ {port}...")
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+        print(f"✅ خادم الويب يعمل على المنفذ {port}")
+    except Exception as e:
+        print(f"❌ فشل خادم الويب: {e}")
 
 # ==================== نظام التسجيل ====================
 
@@ -147,7 +152,7 @@ class AntiDetection:
     def disguise_link(self, text):
         return re.sub(r't\.me', 't\u200B.me', text)
     
-    def random_delay(self, base_delay=10):
+    def random_delay(self, base_delay=12):
         return random.randint(int(base_delay * 0.8), int(base_delay * 1.5))
     
     def get_variation(self, text, variation_count=6):
@@ -1529,13 +1534,22 @@ async def restore_sessions():
     logger.info(f"✅ تم استعادة {restored} من أصل {len(accounts)} حساب")
     return restored
 
-# التشغيل الرئيسي
+# ==================== التشغيل الرئيسي ====================
+
 async def main():
     global bot, start_time
     start_time = datetime.now()
     
-    # ✅ هذا السطر مهم جداً لفتح المنفذ على Render
-    Thread(target=run_web, daemon=True).start()
+    # ✅ تشغيل خادم الويب أولاً لفتح المنفذ
+    try:
+        print("🌐 جاري تشغيل خادم الويب...")
+        web_thread = Thread(target=run_web, daemon=True)
+        web_thread.start()
+        # انتظر 3 ثواني للتأكد من أن الخادم يعمل
+        time.sleep(3)
+        print("✅ خادم الويب يعمل على المنفذ 10000")
+    except Exception as e:
+        print(f"❌ فشل تشغيل خادم الويب: {e}")
     
     print("🚀 جاري تشغيل البوت...")
     print("👤 ADMIN_ID المستخدم:", ADMIN_ID)
