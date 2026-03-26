@@ -1,9 +1,9 @@
 services:
-  - type: worker
+  - type: web
     name: telegram-bot
     runtime: python
     buildCommand: pip install -r requirements.txt
-    startCommand: python bot.py
+    startCommand: gunicorn bot:app & python bot.py
     envVars:
       - key: API_ID
         value: 33957094
@@ -13,3 +13,5 @@ services:
         value: 8568132127:AAG-4Mxkj7WxpQcVwUcX6GdGHRAfEMjQs_8
       - key: ADMIN_ID
         value: 7853478744
+      - key: DB_TYPE
+        value: local
