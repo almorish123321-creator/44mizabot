@@ -5,7 +5,7 @@
 ╔═══════════════════════════════════════════════════════════════╗
 ║     🤖 بوت النشر الخارق - النسخة المتطورة 💪                  ║
 ║     مع دعم متعدد الرسائل + إدارة حسابات غير محدودة          ║
-║     + حذف قاعدة البيانات + نظام المحظورات المؤقتة           ║
+║     + انضمام بطيء لـ 20 رابط + حذف قاعدة البيانات           ║
 ╚═══════════════════════════════════════════════════════════════╝
 """
 
@@ -1151,52 +1151,109 @@ async def text_handler(event):
             await event.respond("❌ لا توجد نتائج")
         TEMP.pop(ADMIN_ID)
     
-    # معالجة الروابط (انضمام تلقائي) - فقط للمجموعات
+    # معالجة الروابط (انضمام بطيء جداً لـ 20 رابط)
     else:
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)[a-zA-Z0-9_-]+|https?://t\.me/[a-zA-Z0-9_]+)", text)
         if links and SETTINGS.get('auto_join_enabled', True) and USER_CLIENTS:
-            await handle_auto_join_with_save(event, links)
+            await handle_auto_join_slow(event, links)
 
-# دالة الانضمام التلقائي مع حفظ البيانات - للمجموعات فقط
-async def handle_auto_join_with_save(event, links):
-    await event.respond(f"⏳ جاري الانضمام إلى {len(links)} رابط...")
+# ===== دالة الانضمام لـ 20 رابط مع تأخيرات طويلة جداً =====
+async def handle_auto_join_slow(event, links):
+    """انضمام لـ 20 رابط مع تأخيرات طويلة جداً لحماية الحسابات"""
+    max_links = min(len(links), 20)  # حد أقصى 20 رابط
+    
+    await event.respond(
+        f"🐢 **انضمام بطيء لـ {max_links} رابط**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📌 عدد الروابط: {max_links}\n"
+        f"⏱ الوقت المتوقع: {max_links * 2}-{max_links * 4} دقائق\n"
+        f"🛡 هذا الإعداد يحمي الحسابات من الحظر\n\n"
+        f"جاري البدء..."
+    )
+    
     success = 0
     failed = 0
     saved = 0
     
-    for link in links:
+    for i, link in enumerate(links[:max_links]):
+        # تأخير بين الروابط (45-90 ثانية)
+        if i > 0:
+            delay = random.randint(45, 90)
+            logger.info(f"⏸ انتظار {delay} ثانية قبل الرابط رقم {i+1}...")
+            await asyncio.sleep(delay)
+        
+        joined = False
         for phone, client in USER_CLIENTS.items():
+            if joined:
+                break
+                
             try:
+                # تأخير قبل محاولة الانضمام (20-40 ثانية)
+                pre_delay = random.randint(20, 40)
+                logger.info(f"⏸ انتظار {pre_delay} ثانية قبل محاولة {phone[-8:]}...")
+                await asyncio.sleep(pre_delay)
+                
                 group_info = None
                 if "joinchat" in link or "+" in link:
                     hash_part = link.split('/')[-1].replace('+', '')
+                    logger.info(f"🔗 محاولة الانضمام عبر رابط دعوة...")
                     updates = await client(ImportChatInviteRequest(hash_part))
                     if updates.chats:
                         chat = updates.chats[0]
                         group_info = (chat.id, chat.title)
                 else:
                     username = link.split('/')[-1]
+                    logger.info(f"🔗 محاولة الانضمام إلى @{username}...")
                     entity = await client.get_entity(username)
                     if entity:
                         await client(JoinChannelRequest(link))
                         group_info = (entity.id, getattr(entity, 'title', username))
                 
                 success += 1
+                joined = True
+                logger.success(f"✅ تم الانضمام بنجاح باستخدام {phone[-8:]}")
                 
-                # حفظ الرابط في قاعدة البيانات
+                # تأخير بعد الانضمام الناجح (30-60 ثانية)
+                post_delay = random.randint(30, 60)
+                logger.info(f"⏸ انتظار {post_delay} ثانية بعد الانضمام...")
+                await asyncio.sleep(post_delay)
+                
+                # حفظ الرابط
                 if SETTINGS.get('save_joined_links', True) and group_info:
                     group_id, group_name = group_info
                     db.add_joined_link(link, group_id, group_name[:50], phone)
                     saved += 1
+                    logger.success(f"💾 تم حفظ {group_name[:30]} في قاعدة البيانات")
                 
-                await asyncio.sleep(2)
                 break
+                
+            except FloodWaitError as e:
+                wait_time = e.seconds + random.randint(20, 40)
+                logger.warning(f"⏳ FloodWait: انتظار {wait_time} ثانية...")
+                await asyncio.sleep(wait_time)
+                continue
                 
             except Exception as e:
                 failed += 1
-                logger.error(f"فشل انضمام {phone} إلى {link}: {e}")
+                logger.error(f"❌ فشل انضمام {phone} إلى {link}: {e}")
+                error_delay = random.randint(40, 80)
+                logger.info(f"⏸ انتظار {error_delay} ثانية بعد الفشل...")
+                await asyncio.sleep(error_delay)
+                continue
+        
+        if not joined:
+            failed += 1
+            logger.warning(f"⚠️ فشل الانضمام لـ {link} بجميع الحسابات")
+            await asyncio.sleep(random.randint(60, 90))
     
-    result_text = f"📊 **نتيجة الانضمام:**\n✅ نجاح: {success}\n❌ فشل: {failed}"
+    await asyncio.sleep(random.randint(10, 20))
+    
+    result_text = f"📊 **نتيجة الانضمام:**\n"
+    result_text += f"━━━━━━━━━━━━━━━━━━━━\n"
+    result_text += f"✅ نجاح: {success}\n"
+    result_text += f"❌ فشل: {failed}\n"
+    result_text += f"⏱ تم معالجة {max_links} رابط\n"
+    result_text += f"🛡 تم استخدام تأخيرات طويلة لحماية الحسابات"
     if saved > 0:
         result_text += f"\n💾 تم حفظ: {saved} رابط"
     
@@ -1240,7 +1297,7 @@ async def handle_password(event, state, password):
     except Exception as e:
         await event.respond(f"❌ خطأ: {str(e)[:100]}")
 
-# ===== دالة النشر التلقائي - معدلة مع نظام المحظورات =====
+# ===== دالة النشر التلقائي =====
 async def poster():
     global is_posting
     logger.info("🚀 بدء النشر...")
@@ -1399,7 +1456,7 @@ async def main():
             await text_handler(e)
     
     logger.success("✅ البوت جاهز! أرسل /start")
-    print("🎉 البوت يعمل وينتظر الأوامر...")
+    print("🎉 البوت يعمل مع نظام الانضمام لـ 20 رابط (تأخيرات طويلة)")
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
