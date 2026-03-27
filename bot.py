@@ -5,7 +5,7 @@
 ╔═══════════════════════════════════════════════════════════════╗
 ║     🤖 بوت النشر الخارق - النسخة المتطورة 💪                  ║
 ║     مع دعم متعدد الرسائل + إدارة حسابات غير محدودة          ║
-║     + انضمام بطيء لـ 20 رابط + حذف قاعدة البيانات           ║
+║     + قاعدة بيانات Turso Cloud (9GB مجاني)                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 """
 
@@ -108,9 +108,9 @@ class GroupBlacklistManager:
 
 group_blacklist = GroupBlacklistManager()
 
-# ==================== قاعدة البيانات المتكاملة ====================
+# ==================== قاعدة البيانات المحلية ====================
 
-class Database:
+class LocalDatabase:
     def __init__(self):
         self.db_path = DB_PATH
         self.init_database()
@@ -118,57 +118,21 @@ class Database:
     def init_database(self):
         conn = sqlite3.connect(self.db_path)
         c = conn.cursor()
-        
-        # جدول الإعدادات
-        c.execute('''CREATE TABLE IF NOT EXISTS settings 
-                    (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP)''')
-        
-        # جدول الرسائل (متعدد)
-        c.execute('''CREATE TABLE IF NOT EXISTS messages 
-                    (msg_id TEXT PRIMARY KEY, content TEXT, created_at TIMESTAMP, is_active INTEGER DEFAULT 0)''')
-        
-        # جدول الحسابات
-        c.execute('''CREATE TABLE IF NOT EXISTS accounts 
-                    (phone TEXT PRIMARY KEY, session_str TEXT, added_at TIMESTAMP, 
-                     last_active TIMESTAMP, status TEXT, total_posts INTEGER DEFAULT 0, 
-                     success_posts INTEGER DEFAULT 0, failed_posts INTEGER DEFAULT 0)''')
-        
-        # جدول المجموعات
-        c.execute('''CREATE TABLE IF NOT EXISTS groups 
-                    (group_id TEXT PRIMARY KEY, group_name TEXT, group_username TEXT, 
-                     group_type TEXT, members_count INTEGER DEFAULT 0, added_by TEXT, 
-                     added_at TIMESTAMP, last_post TIMESTAMP, post_count INTEGER DEFAULT 0, 
-                     is_blacklisted INTEGER DEFAULT 0)''')
-        
-        # جدول سجل النشر
-        c.execute('''CREATE TABLE IF NOT EXISTS posting_history 
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, group_id TEXT, 
-                     group_name TEXT, sent_at TIMESTAMP, status TEXT, error TEXT)''')
-        
-        # جدول قائمة الانتظار
-        c.execute('''CREATE TABLE IF NOT EXISTS queue 
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, group_id TEXT, 
-                     message TEXT, attempts INTEGER DEFAULT 0, created_at TIMESTAMP)''')
-        
-        # جدول الروابط المنضم لها
-        c.execute('''CREATE TABLE IF NOT EXISTS joined_links 
-                    (id INTEGER PRIMARY KEY AUTOINCREMENT, link TEXT, group_id TEXT, 
-                     group_name TEXT, joined_at TIMESTAMP, joined_by TEXT)''')
-        
+        c.execute('''CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT, updated_at TIMESTAMP)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS messages (msg_id TEXT PRIMARY KEY, content TEXT, created_at TIMESTAMP, is_active INTEGER DEFAULT 0)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS accounts (phone TEXT PRIMARY KEY, session_str TEXT, added_at TIMESTAMP, last_active TIMESTAMP, status TEXT, total_posts INTEGER DEFAULT 0, success_posts INTEGER DEFAULT 0, failed_posts INTEGER DEFAULT 0)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS groups (group_id TEXT PRIMARY KEY, group_name TEXT, group_username TEXT, group_type TEXT, members_count INTEGER DEFAULT 0, added_by TEXT, added_at TIMESTAMP, last_post TIMESTAMP, post_count INTEGER DEFAULT 0, is_blacklisted INTEGER DEFAULT 0)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS posting_history (id INTEGER PRIMARY KEY AUTOINCREMENT, phone TEXT, group_id TEXT, group_name TEXT, sent_at TIMESTAMP, status TEXT, error TEXT)''')
+        c.execute('''CREATE TABLE IF NOT EXISTS joined_links (id INTEGER PRIMARY KEY AUTOINCREMENT, link TEXT, group_id TEXT, group_name TEXT, joined_at TIMESTAMP, joined_by TEXT)''')
         conn.commit()
         conn.close()
-        logger.success("✅ قاعدة البيانات جاهزة")
-        
-        # إضافة رسالة افتراضية إذا لم توجد رسائل
+        logger.success("✅ قاعدة البيانات المحلية جاهزة")
         if not self.get_all_messages():
-            self.save_message("default", "📢 مرحباً بك في قناتنا!\nتابعنا للمزيد", is_active=True)
-            logger.info("📝 تم إضافة رسالة افتراضية")
+            self.save_message("default", "📢 مرحباً بك!", is_active=True)
     
-    # ========== دوال الإعدادات ==========
     def save_setting(self, key, value):
         conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)', 
-                    (key, json.dumps(value), datetime.now()))
+        conn.execute('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)', (key, json.dumps(value), datetime.now()))
         conn.commit()
         conn.close()
     
@@ -184,17 +148,13 @@ class Database:
         conn.close()
         return {key: json.loads(value) for key, value in rows}
     
-    # ========== دوال الرسائل المتعددة ==========
     def save_message(self, msg_id, content, is_active=False):
         conn = sqlite3.connect(self.db_path)
-        # إذا كانت هذه الرسالة نشطة، قم بتعطيل البقية
         if is_active:
             conn.execute('UPDATE messages SET is_active = 0')
-        conn.execute('INSERT OR REPLACE INTO messages (msg_id, content, created_at, is_active) VALUES (?, ?, ?, ?)', 
-                    (msg_id, content, datetime.now(), 1 if is_active else 0))
+        conn.execute('INSERT OR REPLACE INTO messages (msg_id, content, created_at, is_active) VALUES (?, ?, ?, ?)', (msg_id, content, datetime.now(), 1 if is_active else 0))
         conn.commit()
         conn.close()
-        logger.success(f"✅ تم حفظ الرسالة {msg_id}")
     
     def get_all_messages(self):
         conn = sqlite3.connect(self.db_path)
@@ -208,7 +168,6 @@ class Database:
         conn.close()
         if row:
             return {'id': row[0], 'content': row[1]}
-        # إذا لم توجد رسالة نشطة، خذ أول رسالة
         msgs = self.get_all_messages()
         if msgs:
             self.set_active_message(msgs[0][0])
@@ -221,23 +180,18 @@ class Database:
         conn.execute('UPDATE messages SET is_active = 1 WHERE msg_id = ?', (msg_id,))
         conn.commit()
         conn.close()
-        logger.success(f"✅ تم تعيين الرسالة {msg_id} كنشطة")
     
     def delete_message(self, msg_id):
         conn = sqlite3.connect(self.db_path)
         conn.execute('DELETE FROM messages WHERE msg_id = ?', (msg_id,))
         conn.commit()
         conn.close()
-        logger.success(f"✅ تم حذف الرسالة {msg_id}")
     
-    # ========== دوال الحسابات ==========
     def add_account(self, phone, session_str):
         conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT OR REPLACE INTO accounts (phone, session_str, added_at, last_active, status) VALUES (?, ?, ?, ?, ?)', 
-                    (phone, session_str, datetime.now(), datetime.now(), 'active'))
+        conn.execute('INSERT OR REPLACE INTO accounts (phone, session_str, added_at, last_active, status) VALUES (?, ?, ?, ?, ?)', (phone, session_str, datetime.now(), datetime.now(), 'active'))
         conn.commit()
         conn.close()
-        logger.success(f"✅ تم حفظ الحساب {phone}")
     
     def remove_account(self, phone):
         conn = sqlite3.connect(self.db_path)
@@ -253,8 +207,7 @@ class Database:
     
     def update_account_status(self, phone, status):
         conn = sqlite3.connect(self.db_path)
-        conn.execute('UPDATE accounts SET status = ?, last_active = ? WHERE phone = ?', 
-                    (status, datetime.now(), phone))
+        conn.execute('UPDATE accounts SET status = ?, last_active = ? WHERE phone = ?', (status, datetime.now(), phone))
         conn.commit()
         conn.close()
     
@@ -267,18 +220,15 @@ class Database:
         conn.commit()
         conn.close()
     
-    # ========== دوال المجموعات ==========
     def add_group(self, group_id, group_name, group_username, group_type, members_count, added_by):
         conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT OR IGNORE INTO groups (group_id, group_name, group_username, group_type, members_count, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-                    (str(group_id), group_name or "بدون اسم", group_username, group_type, members_count or 0, added_by, datetime.now()))
+        conn.execute('INSERT OR IGNORE INTO groups (group_id, group_name, group_username, group_type, members_count, added_by, added_at) VALUES (?, ?, ?, ?, ?, ?, ?)', (str(group_id), group_name or "بدون اسم", group_username or "", group_type, members_count or 0, added_by, datetime.now()))
         conn.commit()
         conn.close()
     
     def update_group_post(self, group_id):
         conn = sqlite3.connect(self.db_path)
-        conn.execute('UPDATE groups SET post_count = post_count + 1, last_post = ? WHERE group_id = ?', 
-                    (datetime.now(), str(group_id)))
+        conn.execute('UPDATE groups SET post_count = post_count + 1, last_post = ? WHERE group_id = ?', (datetime.now(), str(group_id)))
         conn.commit()
         conn.close()
     
@@ -308,16 +258,13 @@ class Database:
     
     def search_groups(self, query):
         conn = sqlite3.connect(self.db_path)
-        rows = conn.execute('SELECT group_id, group_name, members_count FROM groups WHERE group_name LIKE ? LIMIT 20', 
-                          (f'%{query}%',)).fetchall()
+        rows = conn.execute('SELECT group_id, group_name, members_count FROM groups WHERE group_name LIKE ? LIMIT 20', (f'%{query}%',)).fetchall()
         conn.close()
         return rows
     
-    # ========== دوال سجل النشر ==========
     def log_post(self, phone, group_id, group_name, status='success', error=None):
         conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT INTO posting_history (phone, group_id, group_name, sent_at, status, error) VALUES (?, ?, ?, ?, ?, ?)', 
-                    (phone, str(group_id), group_name, datetime.now(), status, error))
+        conn.execute('INSERT INTO posting_history (phone, group_id, group_name, sent_at, status, error) VALUES (?, ?, ?, ?, ?, ?)', (phone, str(group_id), group_name[:50], datetime.now(), status, error))
         if status == 'success':
             self.increment_account_posts(phone, success=True)
             self.update_group_post(group_id)
@@ -341,11 +288,9 @@ class Database:
         conn.close()
         return rows
     
-    # ========== دوال الروابط ==========
     def add_joined_link(self, link, group_id, group_name, joined_by):
         conn = sqlite3.connect(self.db_path)
-        conn.execute('INSERT INTO joined_links (link, group_id, group_name, joined_at, joined_by) VALUES (?, ?, ?, ?, ?)', 
-                    (link, str(group_id), group_name, datetime.now(), joined_by))
+        conn.execute('INSERT INTO joined_links (link, group_id, group_name, joined_at, joined_by) VALUES (?, ?, ?, ?, ?)', (link, str(group_id), group_name[:50], datetime.now(), joined_by))
         conn.commit()
         conn.close()
     
@@ -361,7 +306,6 @@ class Database:
         conn.close()
         return count
     
-    # ========== دوال النسخ الاحتياطي ==========
     def create_backup(self):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         backup_file = f"{BACKUPS_DIR}/backup_{timestamp}.db"
@@ -372,7 +316,418 @@ class Database:
                 old.unlink()
         return backup_file
 
-db = Database()
+db_local = LocalDatabase()
+
+# ==================== Turso Cloud Database (9GB مجاني) ====================
+
+try:
+    import libsql_experimental as libsql
+except ImportError:
+    libsql = None
+    logger.warning("⚠️ مكتبة libsql_experimental غير مثبتة، استخدم: pip install libsql-experimental")
+
+TURSO_URL = os.environ.get('TURSO_URL', '')
+TURSO_TOKEN = os.environ.get('TURSO_TOKEN', '')
+
+class TursoDatabase:
+    def __init__(self):
+        self.connected = False
+        self.client = None
+        if libsql and TURSO_URL and TURSO_TOKEN:
+            try:
+                self.client = libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
+                self.connected = True
+                self.init_tables()
+                logger.success("✅ تم الاتصال بـ Turso Cloud (9GB مجاني)")
+            except Exception as e:
+                logger.error(f"❌ فشل الاتصال بـ Turso: {e}")
+        else:
+            if not libsql:
+                logger.info("📁 مكتبة Turso غير مثبتة")
+            logger.info("📁 Turso غير مهيأ، استخدام قاعدة البيانات المحلية")
+
+    def init_tables(self):
+        try:
+            self.client.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT
+                )
+            """)
+            self.client.execute("""
+                CREATE TABLE IF NOT EXISTS messages (
+                    msg_id TEXT PRIMARY KEY,
+                    content TEXT,
+                    created_at TEXT,
+                    is_active INTEGER DEFAULT 0
+                )
+            """)
+            self.client.execute("""
+                CREATE TABLE IF NOT EXISTS accounts (
+                    phone TEXT PRIMARY KEY,
+                    session_str TEXT,
+                    added_at TEXT,
+                    last_active TEXT,
+                    status TEXT,
+                    total_posts INTEGER DEFAULT 0,
+                    success_posts INTEGER DEFAULT 0,
+                    failed_posts INTEGER DEFAULT 0
+                )
+            """)
+            self.client.execute("""
+                CREATE TABLE IF NOT EXISTS groups (
+                    group_id TEXT PRIMARY KEY,
+                    group_name TEXT,
+                    group_username TEXT,
+                    group_type TEXT,
+                    members_count INTEGER DEFAULT 0,
+                    added_by TEXT,
+                    added_at TEXT,
+                    last_post TEXT,
+                    post_count INTEGER DEFAULT 0,
+                    is_blacklisted INTEGER DEFAULT 0
+                )
+            """)
+            self.client.execute("""
+                CREATE TABLE IF NOT EXISTS posting_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    phone TEXT,
+                    group_id TEXT,
+                    group_name TEXT,
+                    sent_at TEXT,
+                    status TEXT,
+                    error TEXT
+                )
+            """)
+            self.client.execute("""
+                CREATE TABLE IF NOT EXISTS joined_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    link TEXT,
+                    group_id TEXT,
+                    group_name TEXT,
+                    joined_at TEXT,
+                    joined_by TEXT
+                )
+            """)
+            logger.success("✅ تم إنشاء الجداول في Turso")
+        except Exception as e:
+            logger.error(f"❌ فشل إنشاء الجداول: {e}")
+
+    def save_setting(self, key, value):
+        if not self.connected:
+            return db_local.save_setting(key, value)
+        try:
+            self.client.execute(
+                "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
+                (key, json.dumps(value), datetime.now().isoformat())
+            )
+        except Exception as e:
+            logger.error(f"فشل حفظ الإعداد: {e}")
+            return db_local.save_setting(key, value)
+
+    def get_setting(self, key, default=None):
+        if not self.connected:
+            return db_local.get_setting(key, default)
+        try:
+            result = self.client.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            ).fetchone()
+            return json.loads(result[0]) if result else default
+        except:
+            return db_local.get_setting(key, default)
+
+    def get_all_settings(self):
+        if not self.connected:
+            return db_local.get_all_settings()
+        try:
+            result = self.client.execute("SELECT key, value FROM settings").fetchall()
+            return {row[0]: json.loads(row[1]) for row in result}
+        except:
+            return db_local.get_all_settings()
+
+    def save_message(self, msg_id, content, is_active=False):
+        if not self.connected:
+            return db_local.save_message(msg_id, content, is_active)
+        try:
+            if is_active:
+                self.client.execute("UPDATE messages SET is_active = 0")
+            self.client.execute(
+                "INSERT OR REPLACE INTO messages (msg_id, content, created_at, is_active) VALUES (?, ?, ?, ?)",
+                (msg_id, content, datetime.now().isoformat(), 1 if is_active else 0)
+            )
+        except:
+            return db_local.save_message(msg_id, content, is_active)
+
+    def get_all_messages(self):
+        if not self.connected:
+            return db_local.get_all_messages()
+        try:
+            result = self.client.execute(
+                "SELECT msg_id, content, is_active FROM messages ORDER BY created_at DESC"
+            ).fetchall()
+            return result
+        except:
+            return db_local.get_all_messages()
+
+    def get_active_message(self):
+        if not self.connected:
+            return db_local.get_active_message()
+        try:
+            result = self.client.execute(
+                "SELECT msg_id, content FROM messages WHERE is_active = 1"
+            ).fetchone()
+            if result:
+                return {'id': result[0], 'content': result[1]}
+            result = self.client.execute(
+                "SELECT msg_id, content FROM messages ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+            if result:
+                self.set_active_message(result[0])
+                return {'id': result[0], 'content': result[1]}
+            return None
+        except:
+            return db_local.get_active_message()
+
+    def set_active_message(self, msg_id):
+        if not self.connected:
+            return db_local.set_active_message(msg_id)
+        try:
+            self.client.execute("UPDATE messages SET is_active = 0")
+            self.client.execute("UPDATE messages SET is_active = 1 WHERE msg_id = ?", (msg_id,))
+        except:
+            return db_local.set_active_message(msg_id)
+
+    def delete_message(self, msg_id):
+        if not self.connected:
+            return db_local.delete_message(msg_id)
+        try:
+            self.client.execute("DELETE FROM messages WHERE msg_id = ?", (msg_id,))
+        except:
+            return db_local.delete_message(msg_id)
+
+    def add_account(self, phone, session_str):
+        if not self.connected:
+            return db_local.add_account(phone, session_str)
+        try:
+            self.client.execute(
+                "INSERT OR REPLACE INTO accounts VALUES (?, ?, ?, ?, ?, 0, 0, 0)",
+                (phone, session_str, datetime.now().isoformat(), 
+                 datetime.now().isoformat(), 'active')
+            )
+            logger.success(f"✅ تم حفظ {phone} في Turso")
+        except Exception as e:
+            logger.error(f"فشل حفظ الحساب: {e}")
+            return db_local.add_account(phone, session_str)
+
+    def remove_account(self, phone):
+        if not self.connected:
+            return db_local.remove_account(phone)
+        try:
+            self.client.execute("DELETE FROM accounts WHERE phone = ?", (phone,))
+        except:
+            return db_local.remove_account(phone)
+
+    def get_accounts(self):
+        if not self.connected:
+            return db_local.get_accounts()
+        try:
+            result = self.client.execute(
+                "SELECT phone, status, total_posts, success_posts, failed_posts FROM accounts ORDER BY added_at DESC"
+            ).fetchall()
+            return result
+        except:
+            return db_local.get_accounts()
+
+    def update_account_status(self, phone, status):
+        if not self.connected:
+            return db_local.update_account_status(phone, status)
+        try:
+            self.client.execute(
+                "UPDATE accounts SET status = ?, last_active = ? WHERE phone = ?",
+                (status, datetime.now().isoformat(), phone)
+            )
+        except:
+            return db_local.update_account_status(phone, status)
+
+    def add_group(self, group_id, group_name, group_username, group_type, members_count, added_by):
+        if not self.connected:
+            return db_local.add_group(group_id, group_name, group_username, group_type, members_count, added_by)
+        try:
+            self.client.execute(
+                "INSERT OR IGNORE INTO groups VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)",
+                (str(group_id), group_name or "بدون اسم", group_username or "", group_type, 
+                 members_count or 0, added_by, datetime.now().isoformat(), None)
+            )
+        except:
+            return db_local.add_group(group_id, group_name, group_username, group_type, members_count, added_by)
+
+    def update_group_post(self, group_id):
+        if not self.connected:
+            return db_local.update_group_post(group_id)
+        try:
+            self.client.execute(
+                "UPDATE groups SET post_count = post_count + 1, last_post = ? WHERE group_id = ?",
+                (datetime.now().isoformat(), str(group_id))
+            )
+        except:
+            return db_local.update_group_post(group_id)
+
+    def blacklist_group(self, group_id):
+        if not self.connected:
+            return db_local.blacklist_group(group_id)
+        try:
+            self.client.execute("UPDATE groups SET is_blacklisted = 1 WHERE group_id = ?", (str(group_id),))
+        except:
+            return db_local.blacklist_group(group_id)
+
+    def whitelist_group(self, group_id):
+        if not self.connected:
+            return db_local.whitelist_group(group_id)
+        try:
+            self.client.execute("UPDATE groups SET is_blacklisted = 0 WHERE group_id = ?", (str(group_id),))
+        except:
+            return db_local.whitelist_group(group_id)
+
+    def get_all_groups(self):
+        if not self.connected:
+            return db_local.get_all_groups()
+        try:
+            result = self.client.execute(
+                "SELECT group_id, group_name, members_count, post_count, is_blacklisted, last_post FROM groups ORDER BY post_count DESC"
+            ).fetchall()
+            return result
+        except:
+            return db_local.get_all_groups()
+
+    def get_blacklisted_groups(self):
+        if not self.connected:
+            return db_local.get_blacklisted_groups()
+        try:
+            result = self.client.execute(
+                "SELECT group_id, group_name FROM groups WHERE is_blacklisted = 1"
+            ).fetchall()
+            return result
+        except:
+            return db_local.get_blacklisted_groups()
+
+    def search_groups(self, query):
+        if not self.connected:
+            return db_local.search_groups(query)
+        try:
+            result = self.client.execute(
+                "SELECT group_id, group_name, members_count FROM groups WHERE group_name LIKE ? LIMIT 20",
+                (f'%{query}%',)
+            ).fetchall()
+            return result
+        except:
+            return db_local.search_groups(query)
+
+    def log_post(self, phone, group_id, group_name, status='success', error=None):
+        if not self.connected:
+            return db_local.log_post(phone, group_id, group_name, status, error)
+        try:
+            self.client.execute(
+                "INSERT INTO posting_history (phone, group_id, group_name, sent_at, status, error) VALUES (?, ?, ?, ?, ?, ?)",
+                (phone, str(group_id), group_name[:50], datetime.now().isoformat(), status, error)
+            )
+            if status == 'success':
+                self.update_group_post(group_id)
+        except:
+            return db_local.log_post(phone, group_id, group_name, status, error)
+
+    def get_posting_stats(self, hours=24):
+        if not self.connected:
+            return db_local.get_posting_stats(hours)
+        try:
+            since = (datetime.now() - timedelta(hours=hours)).isoformat()
+            total = self.client.execute(
+                "SELECT COUNT(*) FROM posting_history WHERE sent_at > ?", (since,)
+            ).fetchone()[0]
+            success = self.client.execute(
+                "SELECT COUNT(*) FROM posting_history WHERE sent_at > ? AND status = 'success'", (since,)
+            ).fetchone()[0]
+            return {'total': total, 'success': success, 'failed': total - success}
+        except:
+            return db_local.get_posting_stats(hours)
+
+    def get_recent_posts(self, limit=10):
+        if not self.connected:
+            return db_local.get_recent_posts(limit)
+        try:
+            result = self.client.execute(
+                "SELECT phone, group_name, status, sent_at FROM posting_history ORDER BY sent_at DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+            return result
+        except:
+            return db_local.get_recent_posts(limit)
+
+    def add_joined_link(self, link, group_id, group_name, joined_by):
+        if not self.connected:
+            return db_local.add_joined_link(link, group_id, group_name, joined_by)
+        try:
+            self.client.execute(
+                "INSERT INTO joined_links (link, group_id, group_name, joined_at, joined_by) VALUES (?, ?, ?, ?, ?)",
+                (link, str(group_id), group_name[:50], datetime.now().isoformat(), joined_by)
+            )
+        except:
+            return db_local.add_joined_link(link, group_id, group_name, joined_by)
+
+    def get_joined_links(self, limit=100):
+        if not self.connected:
+            return db_local.get_joined_links(limit)
+        try:
+            result = self.client.execute(
+                "SELECT link, group_name, joined_at, joined_by FROM joined_links ORDER BY joined_at DESC LIMIT ?",
+                (limit,)
+            ).fetchall()
+            return result
+        except:
+            return db_local.get_joined_links(limit)
+
+    def get_joined_links_count(self):
+        if not self.connected:
+            return db_local.get_joined_links_count()
+        try:
+            result = self.client.execute("SELECT COUNT(*) FROM joined_links").fetchone()
+            return result[0] if result else 0
+        except:
+            return db_local.get_joined_links_count()
+
+    def create_backup(self):
+        if not self.connected:
+            return db_local.create_backup()
+        try:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_file = f"{BACKUPS_DIR}/turso_backup_{timestamp}.json"
+            
+            tables = ['settings', 'messages', 'accounts', 'groups', 'posting_history', 'joined_links']
+            data = {}
+            for table in tables:
+                result = self.client.execute(f"SELECT * FROM {table}").fetchall()
+                columns = [desc[0] for desc in self.client.execute(f"PRAGMA table_info({table})").fetchall()]
+                data[table] = [dict(zip(columns, row)) for row in result]
+            
+            with open(backup_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2, default=str)
+            
+            logger.success(f"✅ تم إنشاء نسخة احتياطية من Turso: {backup_file}")
+            return backup_file
+        except Exception as e:
+            logger.error(f"❌ فشل إنشاء النسخة الاحتياطية: {e}")
+            return db_local.create_backup()
+
+# ==================== اختيار قاعدة البيانات ====================
+
+db_cloud = TursoDatabase()
+
+if db_cloud.connected:
+    db = db_cloud
+    logger.success("✅ استخدام قاعدة بيانات Turso السحابية (9GB)")
+else:
+    db = db_local
+    logger.info("📁 استخدام قاعدة البيانات المحلية SQLite")
 
 # ==================== المتغيرات العامة ====================
 
@@ -412,7 +767,7 @@ def format_number(num):
         return f"{num/1000:.1f}K"
     return str(num)
 
-# ==================== الأزرار الكاملة ====================
+# ==================== الأزرار ====================
 
 def main_buttons():
     enc_status = "✅ مفعل" if SETTINGS['encryption'] else "❌ معطل"
@@ -492,8 +847,11 @@ async def start_handler(event):
     joined_links = db.get_joined_links_count()
     active_msg = db.get_active_message()
     
+    db_type = "☁️ Turso Cloud (9GB)" if db_cloud.connected else "📁 محلية SQLite"
+    
     await event.respond(
         f"👋 **أهلاً بك في بوت النشر الخارق!**\n\n"
+        f"🗄️ **قاعدة البيانات:** {db_type}\n"
         f"📊 **الإحصائيات:**\n"
         f"• الحسابات: {len(accounts)}\n"
         f"• المجموعات: {len(groups)}\n"
@@ -584,10 +942,20 @@ async def callback_handler(event):
                     pass
             USER_CLIENTS.clear()
             
-            if os.path.exists(DB_PATH):
-                os.remove(DB_PATH)
-            
-            db.init_database()
+            # حذف قاعدة البيانات حسب النوع
+            if db_cloud.connected:
+                tables = ['settings', 'messages', 'accounts', 'groups', 'posting_history', 'joined_links']
+                for table in tables:
+                    try:
+                        db_cloud.client.execute(f"DROP TABLE IF EXISTS {table}")
+                    except:
+                        pass
+                db_cloud.init_tables()
+                logger.success("✅ تم إعادة تهيئة Turso")
+            else:
+                if os.path.exists(DB_PATH):
+                    os.remove(DB_PATH)
+                db_local.init_database()
             
             SETTINGS.update({
                 'interval': 3,
@@ -705,7 +1073,7 @@ async def callback_handler(event):
         is_posting = False
         await event.edit("🛑 تم إيقاف النشر", buttons=main_buttons())
 
-# ===== دوال عرض الرسائل =====
+# ===== دوال العرض =====
 
 async def list_all_messages(event):
     messages = db.get_all_messages()
@@ -714,9 +1082,7 @@ async def list_all_messages(event):
                         buttons=messages_buttons())
         return
     
-    active_msg = db.get_active_message()
     text = "📋 **جميع الرسائل المحفوظة**\n\n"
-    
     for i, (msg_id, content, is_active) in enumerate(messages[:15], 1):
         status = "🌟 **نشطة**" if is_active else "📄 عادية"
         preview = content[:50] + "..." if len(content) > 50 else content
@@ -758,8 +1124,6 @@ async def show_delete_message(event):
     btns.append([Button.inline("⬅️ عودة", b"manage_messages")])
     await event.edit("🗑 **اختر رسالة للحذف:**\n\n⚠️ تحذير: لا يمكن استعادة الرسائل المحذوفة.", 
                     buttons=btns)
-
-# ===== دوال التقارير الحقيقية =====
 
 async def show_real_stats(event):
     stats_24h = db.get_posting_stats(24)
@@ -860,8 +1224,6 @@ async def show_links_report(event):
     
     await event.edit(text, buttons=reports_buttons())
 
-# ===== دوال العرض الأساسية =====
-
 async def show_status(event):
     accounts = db.get_accounts()
     groups = db.get_all_groups()
@@ -876,7 +1238,10 @@ async def show_status(event):
     
     active_accounts = len([a for a in accounts if a[1] == 'active'])
     
+    db_type = "☁️ Turso Cloud (9GB)" if db_cloud.connected else "📁 محلية SQLite"
+    
     text = f"📊 **حالة البوت**\n\n"
+    text += f"🗄️ **قاعدة البيانات:** {db_type}\n"
     text += f"⏰ **وقت التشغيل:** {int(hours)} س {int(minutes)} د\n"
     text += f"👤 **الحسابات:** {active_accounts}/{len(accounts)}\n"
     text += f"📨 **المنشورات اليوم:** {stats['total']}\n"
@@ -1094,7 +1459,7 @@ async def refresh_groups_async():
             pass
     logger.info(f"✅ تم تحديث {count} مجموعة")
 
-# ===== معالج النصوص =====
+# ===== معالج النصوص والانضمام البطيء =====
 
 async def text_handler(event):
     state = TEMP.get(ADMIN_ID)
@@ -1151,13 +1516,13 @@ async def text_handler(event):
             await event.respond("❌ لا توجد نتائج")
         TEMP.pop(ADMIN_ID)
     
-    # معالجة الروابط (انضمام بطيء جداً لـ 20 رابط)
+    # معالجة الروابط (انضمام بطيء لـ 20 رابط)
     else:
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)[a-zA-Z0-9_-]+|https?://t\.me/[a-zA-Z0-9_]+)", text)
         if links and SETTINGS.get('auto_join_enabled', True) and USER_CLIENTS:
             await handle_auto_join_slow(event, links)
 
-# ===== دالة الانضمام لـ 20 رابط مع تأخيرات طويلة جداً =====
+# ===== دالة الانضمام البطيء لـ 20 رابط =====
 async def handle_auto_join_slow(event, links):
     """انضمام لـ 20 رابط مع تأخيرات طويلة جداً لحماية الحسابات"""
     max_links = min(len(links), 20)  # حد أقصى 20 رابط
@@ -1297,7 +1662,7 @@ async def handle_password(event, state, password):
     except Exception as e:
         await event.respond(f"❌ خطأ: {str(e)[:100]}")
 
-# ===== دالة النشر التلقائي =====
+# ===== دالة النشر =====
 async def poster():
     global is_posting
     logger.info("🚀 بدء النشر...")
@@ -1326,13 +1691,11 @@ async def poster():
                         if not is_posting:
                             break
                         
-                        # النشر فقط في المجموعات (وليس القنوات)
                         if dialog.is_group:
                             blacklisted = [g[0] for g in db.get_blacklisted_groups()]
                             if str(dialog.id) in blacklisted:
                                 continue
                             
-                            # التحقق من المحظورات المؤقتة
                             if group_blacklist.is_banned(str(dialog.id)):
                                 continue
                             
@@ -1363,7 +1726,7 @@ async def poster():
             logger.error(f"Error in poster loop: {e}")
             await asyncio.sleep(10)
 
-# استعادة الجلسات المحفوظة
+# استعادة الجلسات
 async def restore_sessions():
     restored = 0
     accounts = db.get_accounts()
@@ -1377,12 +1740,18 @@ async def restore_sessions():
             session_str = None
             
             # جلب session_str من قاعدة البيانات
-            conn = sqlite3.connect(DB_PATH)
-            result = conn.execute('SELECT session_str FROM accounts WHERE phone = ?', (phone,)).fetchone()
-            conn.close()
-            
-            if result and result[0]:
-                session_str = result[0]
+            if db_cloud.connected:
+                result = db_cloud.client.execute(
+                    "SELECT session_str FROM accounts WHERE phone = ?", (phone,)
+                ).fetchone()
+                if result:
+                    session_str = result[0]
+            else:
+                conn = sqlite3.connect(DB_PATH)
+                result = conn.execute('SELECT session_str FROM accounts WHERE phone = ?', (phone,)).fetchone()
+                conn.close()
+                if result:
+                    session_str = result[0]
             
             if not session_str:
                 logger.warning(f"⚠️ لا توجد جلسة للحساب {phone}")
@@ -1452,11 +1821,11 @@ async def main():
             else:
                 await text_handler(e)
         elif e.is_group and e.message.text:
-            # معالجة الروابط في المجموعات
             await text_handler(e)
     
     logger.success("✅ البوت جاهز! أرسل /start")
-    print("🎉 البوت يعمل مع نظام الانضمام لـ 20 رابط (تأخيرات طويلة)")
+    db_type = "Turso Cloud (9GB)" if db_cloud.connected else "SQLite محلية"
+    print(f"🎉 البوت يعمل مع قاعدة بيانات {db_type}")
     await bot.run_until_disconnected()
 
 if __name__ == "__main__":
