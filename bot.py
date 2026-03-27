@@ -5,6 +5,7 @@
 ╔═══════════════════════════════════════════════════════════════╗
 ║     🤖 بوت النشر الخارق - النسخة المتطورة 💪                  ║
 ║     مع دعم متعدد الرسائل + إدارة حسابات غير محدودة          ║
+║     + حذف قاعدة البيانات + نظام المحظورات المؤقتة           ║
 ╚═══════════════════════════════════════════════════════════════╝
 """
 
@@ -77,6 +78,35 @@ class Logger:
     def critical(self, msg): self.logger.critical(msg); print(f"💥 {msg}")
 
 logger = Logger()
+
+# ==================== نظام إدارة المجموعات المحظورة ====================
+
+class GroupBlacklistManager:
+    def __init__(self):
+        self.banned_groups = set()
+        self.failed_attempts = {}
+    
+    def record_failure(self, group_id, error):
+        if group_id not in self.failed_attempts:
+            self.failed_attempts[group_id] = 0
+        self.failed_attempts[group_id] += 1
+        if self.failed_attempts[group_id] >= 3:
+            self.banned_groups.add(group_id)
+            logger.warning(f"🚫 تم حظر المجموعة {group_id} مؤقتاً")
+    
+    def is_banned(self, group_id):
+        return group_id in self.banned_groups
+    
+    def clear_banned(self, group_id):
+        if group_id in self.banned_groups:
+            self.banned_groups.remove(group_id)
+        if group_id in self.failed_attempts:
+            del self.failed_attempts[group_id]
+    
+    def get_banned_count(self):
+        return len(self.banned_groups)
+
+group_blacklist = GroupBlacklistManager()
 
 # ==================== قاعدة البيانات المتكاملة ====================
 
@@ -357,6 +387,7 @@ SETTINGS.update(db.get_all_settings())
 TEMP = {}
 is_posting = False
 bot = None
+start_time = datetime.now()
 
 # ==================== وظائف مساعدة ====================
 
@@ -414,6 +445,8 @@ def advanced_buttons():
     return [
         [Button.inline(f"🤖 انضمام تلقائي {auto_join}", b"toggle_autojoin")],
         [Button.inline(f"💾 حفظ الروابط {save_links}", b"toggle_save_links")],
+        [Button.inline("🗑️ حذف قاعدة البيانات", b"delete_database")],
+        [Button.inline(f"🚫 محظورات: {group_blacklist.get_banned_count()}", b"view_temp_blacklist")],
         [Button.inline("🚫 إدارة المحظورات", b"blacklist_menu")],
         [Button.inline("🗂 إدارة المجموعات", b"manage_groups")],
         [Button.inline("📊 إحصائيات تفصيلية", b"detailed_stats")],
@@ -473,9 +506,12 @@ async def start_handler(event):
     )
 
 async def callback_handler(event):
+    global SETTINGS
+    global is_posting
+    
     if event.sender_id != ADMIN_ID:
         return
-    global is_posting
+    
     data = event.data.decode()
     logger.info(f"🖱 نقرة: {data}")
     
@@ -517,6 +553,69 @@ async def callback_handler(event):
             await event.answer(f"الرسالة النشطة: {active['content'][:50]}...", alert=True)
         else:
             await event.answer("❌ لا توجد رسالة نشطة", alert=True)
+    
+    # حذف قاعدة البيانات
+    elif data == "delete_database":
+        await event.edit(
+            "⚠️ **تحذير!** ⚠️\n\n"
+            "أنت على وشك حذف قاعدة البيانات بالكامل!\n"
+            "سيتم حذف:\n"
+            "• جميع الحسابات المحفوظة\n"
+            "• جميع الرسائل\n"
+            "• سجل النشر\n"
+            "• المجموعات المحفوظة\n"
+            "• الروابط المنضم لها\n\n"
+            "**هل أنت متأكد؟**",
+            buttons=[
+                [Button.inline("✅ نعم، احذف كل شيء", b"confirm_delete_db")],
+                [Button.inline("❌ إلغاء", b"advanced")]
+            ]
+        )
+    
+    elif data == "confirm_delete_db":
+        try:
+            backup_file = db.create_backup()
+            logger.info(f"📦 تم إنشاء نسخة احتياطية: {backup_file}")
+            
+            for phone, client in USER_CLIENTS.items():
+                try:
+                    await client.disconnect()
+                except:
+                    pass
+            USER_CLIENTS.clear()
+            
+            if os.path.exists(DB_PATH):
+                os.remove(DB_PATH)
+            
+            db.init_database()
+            
+            SETTINGS.update({
+                'interval': 3,
+                'encryption': True,
+                'auto_join_enabled': True,
+                'save_joined_links': True
+            })
+            
+            await event.edit(
+                "✅ **تم حذف قاعدة البيانات بنجاح!**\n\n"
+                "• تم إنشاء نسخة احتياطية\n"
+                "• تم إعادة تهيئة قاعدة البيانات\n"
+                "• جميع الحسابات تم حذفها\n\n"
+                "اضغط /start للبدء من جديد",
+                buttons=[[Button.inline("🔄 العودة للقائمة", b"back")]]
+            )
+        except Exception as e:
+            await event.edit(f"❌ فشل الحذف: {str(e)[:100]}", buttons=[[Button.inline("⬅️ عودة", b"advanced")]])
+    
+    elif data == "view_temp_blacklist":
+        banned = group_blacklist.banned_groups
+        if not banned:
+            await event.answer("📭 لا توجد مجموعات محظورة مؤقتاً", alert=True)
+        else:
+            text = "🚫 **المجموعات المحظورة مؤقتاً:**\n\n"
+            for gid in list(banned)[:20]:
+                text += f"• {gid}\n"
+            await event.edit(text, buttons=advanced_buttons())
     
     # إدارة الرسائل
     elif data == "manage_messages":
@@ -771,10 +870,14 @@ async def show_status(event):
     joined_links = db.get_joined_links_count()
     messages_count = len(db.get_all_messages())
     active_msg = db.get_active_message()
+    uptime = datetime.now() - start_time
+    hours = uptime.total_seconds() // 3600
+    minutes = (uptime.total_seconds() % 3600) // 60
     
     active_accounts = len([a for a in accounts if a[1] == 'active'])
     
     text = f"📊 **حالة البوت**\n\n"
+    text += f"⏰ **وقت التشغيل:** {int(hours)} س {int(minutes)} د\n"
     text += f"👤 **الحسابات:** {active_accounts}/{len(accounts)}\n"
     text += f"📨 **المنشورات اليوم:** {stats['total']}\n"
     text += f"✅ **الناجح:** {stats['success']}\n"
@@ -784,6 +887,7 @@ async def show_status(event):
     text += f"🔗 **الروابط المنضم لها:** {joined_links}\n"
     text += f"📝 **الرسائل المحفوظة:** {messages_count}\n"
     text += f"⚙️ **الفاصل:** {SETTINGS['interval']} ثانية\n"
+    text += f"🚫 **محظورات مؤقتة:** {group_blacklist.get_banned_count()}\n"
     text += f"🔄 **النشر:** {'🟢 نشط' if is_posting else '🔴 متوقف'}\n"
     
     if active_msg:
@@ -949,6 +1053,7 @@ async def delete_account(event, phone):
 
 async def remove_from_blacklist(event, group_id):
     db.whitelist_group(group_id)
+    group_blacklist.clear_banned(str(group_id))
     await event.answer("✅ تمت الإزالة", alert=True)
     await show_blacklist(event)
 
@@ -1135,7 +1240,7 @@ async def handle_password(event, state, password):
     except Exception as e:
         await event.respond(f"❌ خطأ: {str(e)[:100]}")
 
-# دالة النشر التلقائي - فقط للمجموعات
+# ===== دالة النشر التلقائي - معدلة مع نظام المحظورات =====
 async def poster():
     global is_posting
     logger.info("🚀 بدء النشر...")
@@ -1170,6 +1275,10 @@ async def poster():
                             if str(dialog.id) in blacklisted:
                                 continue
                             
+                            # التحقق من المحظورات المؤقتة
+                            if group_blacklist.is_banned(str(dialog.id)):
+                                continue
+                            
                             try:
                                 db.add_group(dialog.id, dialog.name, getattr(dialog.entity, 'username', None), 
                                             'group', getattr(dialog.entity, 'participants_count', 0), phone)
@@ -1177,6 +1286,7 @@ async def poster():
                                 await client.send_message(dialog.id, encrypt_text(txt))
                                 db.log_post(phone, dialog.id, dialog.name, 'success')
                                 groups_sent += 1
+                                group_blacklist.clear_banned(str(dialog.id))
                                 await asyncio.sleep(SETTINGS['interval'])
                                 
                             except FloodWaitError as e:
@@ -1184,6 +1294,8 @@ async def poster():
                                 await asyncio.sleep(e.seconds)
                             except Exception as e:
                                 db.log_post(phone, dialog.id, dialog.name, 'failed', str(e)[:100])
+                                if "banned" in str(e).lower() or "can't write" in str(e).lower():
+                                    group_blacklist.record_failure(str(dialog.id), str(e))
                                 
                 except Exception as e:
                     logger.error(f"Error with account {phone}: {e}")
@@ -1241,7 +1353,8 @@ async def restore_sessions():
 
 # التشغيل الرئيسي
 async def main():
-    global bot
+    global bot, start_time
+    start_time = datetime.now()
     Thread(target=run_web, daemon=True).start()
     
     print("🚀 جاري تشغيل البوت...")
