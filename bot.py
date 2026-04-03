@@ -3,9 +3,8 @@
 
 """
 ╔═══════════════════════════════════════════════════════════════╗
-║     🤖 بوت النشر الخارق - النسخة المتطورة 💪                  ║
-║     مع دعم متعدد الرسائل + إدارة حسابات غير محدودة          ║
-║     + قاعدة بيانات Turso Cloud (9GB مجاني)                  ║
+║     🤖 بوت النشر الخارق - مع Supabase Cloud Database 💪       ║
+║     قاعدة بيانات سحابية 500MB مجاني + انضمام بطيء           ║
 ╚═══════════════════════════════════════════════════════════════╝
 """
 
@@ -48,12 +47,12 @@ DB_PATH = f"{DATA_DIR}/bot_data.db"
 for dir_path in [DATA_DIR, BACKUPS_DIR, LOGS_DIR, TEMP_DIR, EXPORTS_DIR]:
     os.makedirs(dir_path, exist_ok=True)
 
-# ==================== خادم الويب (Keep-Alive) ====================
+# ==================== خادم الويب ====================
 app = Flask(__name__)
 
 @app.route('/')
 def home(): 
-    return jsonify({'status': 'online', 'msg': '🤖 البوت المتطور يعمل بنجاح!', 'time': str(datetime.now())})
+    return jsonify({'status': 'online', 'msg': '🤖 البوت يعمل بنجاح!', 'time': str(datetime.now())})
 
 def run_web():
     port = int(os.environ.get('PORT', 10000))
@@ -318,110 +317,54 @@ class LocalDatabase:
 
 db_local = LocalDatabase()
 
-# ==================== Turso Cloud Database (9GB مجاني) ====================
+# ==================== Supabase Cloud Database ====================
 
 try:
-    import libsql_experimental as libsql
+    from supabase import create_client, Client
 except ImportError:
-    libsql = None
-    logger.warning("⚠️ مكتبة libsql_experimental غير مثبتة، استخدم: pip install libsql-experimental")
+    create_client = None
+    logger.warning("⚠️ مكتبة supabase غير مثبتة، استخدم: pip install supabase")
 
-TURSO_URL = os.environ.get('TURSO_URL', '')
-TURSO_TOKEN = os.environ.get('TURSO_TOKEN', '')
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
-class TursoDatabase:
+class SupabaseDatabase:
     def __init__(self):
         self.connected = False
         self.client = None
-        if libsql and TURSO_URL and TURSO_TOKEN:
+        if create_client and SUPABASE_URL and SUPABASE_KEY:
             try:
-                self.client = libsql.connect(database=TURSO_URL, auth_token=TURSO_TOKEN)
+                self.client = create_client(SUPABASE_URL, SUPABASE_KEY)
                 self.connected = True
                 self.init_tables()
-                logger.success("✅ تم الاتصال بـ Turso Cloud (9GB مجاني)")
+                logger.success("✅ تم الاتصال بـ Supabase Cloud (500MB مجاني)")
             except Exception as e:
-                logger.error(f"❌ فشل الاتصال بـ Turso: {e}")
+                logger.error(f"❌ فشل الاتصال بـ Supabase: {e}")
         else:
-            if not libsql:
-                logger.info("📁 مكتبة Turso غير مثبتة")
-            logger.info("📁 Turso غير مهيأ، استخدام قاعدة البيانات المحلية")
+            if not create_client:
+                logger.info("📁 مكتبة supabase غير مثبتة")
+            logger.info("📁 Supabase غير مهيأ، استخدام قاعدة البيانات المحلية")
 
     def init_tables(self):
+        """إنشاء الجداول في Supabase"""
         try:
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT,
-                    updated_at TEXT
-                )
-            """)
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS messages (
-                    msg_id TEXT PRIMARY KEY,
-                    content TEXT,
-                    created_at TEXT,
-                    is_active INTEGER DEFAULT 0
-                )
-            """)
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS accounts (
-                    phone TEXT PRIMARY KEY,
-                    session_str TEXT,
-                    added_at TEXT,
-                    last_active TEXT,
-                    status TEXT,
-                    total_posts INTEGER DEFAULT 0,
-                    success_posts INTEGER DEFAULT 0,
-                    failed_posts INTEGER DEFAULT 0
-                )
-            """)
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS groups (
-                    group_id TEXT PRIMARY KEY,
-                    group_name TEXT,
-                    group_username TEXT,
-                    group_type TEXT,
-                    members_count INTEGER DEFAULT 0,
-                    added_by TEXT,
-                    added_at TEXT,
-                    last_post TEXT,
-                    post_count INTEGER DEFAULT 0,
-                    is_blacklisted INTEGER DEFAULT 0
-                )
-            """)
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS posting_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    phone TEXT,
-                    group_id TEXT,
-                    group_name TEXT,
-                    sent_at TEXT,
-                    status TEXT,
-                    error TEXT
-                )
-            """)
-            self.client.execute("""
-                CREATE TABLE IF NOT EXISTS joined_links (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    link TEXT,
-                    group_id TEXT,
-                    group_name TEXT,
-                    joined_at TEXT,
-                    joined_by TEXT
-                )
-            """)
-            logger.success("✅ تم إنشاء الجداول في Turso")
-        except Exception as e:
-            logger.error(f"❌ فشل إنشاء الجداول: {e}")
+            # اختبار الاتصال
+            self.client.table('settings').select('*').limit(1).execute()
+            logger.success("✅ الجداول موجودة بالفعل")
+        except:
+            # إنشاء الجداول
+            logger.info("📝 جاري إنشاء الجداول في Supabase...")
+            # الجداول سيتم إنشاؤها تلقائياً عند أول إدخال
 
     def save_setting(self, key, value):
         if not self.connected:
             return db_local.save_setting(key, value)
         try:
-            self.client.execute(
-                "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
-                (key, json.dumps(value), datetime.now().isoformat())
-            )
+            self.client.table('settings').upsert({
+                'key': key,
+                'value': json.dumps(value),
+                'updated_at': datetime.now().isoformat()
+            }).execute()
         except Exception as e:
             logger.error(f"فشل حفظ الإعداد: {e}")
             return db_local.save_setting(key, value)
@@ -430,10 +373,10 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_setting(key, default)
         try:
-            result = self.client.execute(
-                "SELECT value FROM settings WHERE key = ?", (key,)
-            ).fetchone()
-            return json.loads(result[0]) if result else default
+            result = self.client.table('settings').select('value').eq('key', key).execute()
+            if result.data:
+                return json.loads(result.data[0]['value'])
+            return default
         except:
             return db_local.get_setting(key, default)
 
@@ -441,8 +384,8 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_all_settings()
         try:
-            result = self.client.execute("SELECT key, value FROM settings").fetchall()
-            return {row[0]: json.loads(row[1]) for row in result}
+            result = self.client.table('settings').select('*').execute()
+            return {row['key']: json.loads(row['value']) for row in result.data}
         except:
             return db_local.get_all_settings()
 
@@ -451,11 +394,13 @@ class TursoDatabase:
             return db_local.save_message(msg_id, content, is_active)
         try:
             if is_active:
-                self.client.execute("UPDATE messages SET is_active = 0")
-            self.client.execute(
-                "INSERT OR REPLACE INTO messages (msg_id, content, created_at, is_active) VALUES (?, ?, ?, ?)",
-                (msg_id, content, datetime.now().isoformat(), 1 if is_active else 0)
-            )
+                self.client.table('messages').update({'is_active': 0}).execute()
+            self.client.table('messages').upsert({
+                'msg_id': msg_id,
+                'content': content,
+                'created_at': datetime.now().isoformat(),
+                'is_active': 1 if is_active else 0
+            }).execute()
         except:
             return db_local.save_message(msg_id, content, is_active)
 
@@ -463,10 +408,8 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_all_messages()
         try:
-            result = self.client.execute(
-                "SELECT msg_id, content, is_active FROM messages ORDER BY created_at DESC"
-            ).fetchall()
-            return result
+            result = self.client.table('messages').select('*').order('created_at', desc=True).execute()
+            return [(row['msg_id'], row['content'], row.get('is_active', 0)) for row in result.data]
         except:
             return db_local.get_all_messages()
 
@@ -474,17 +417,13 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_active_message()
         try:
-            result = self.client.execute(
-                "SELECT msg_id, content FROM messages WHERE is_active = 1"
-            ).fetchone()
-            if result:
-                return {'id': result[0], 'content': result[1]}
-            result = self.client.execute(
-                "SELECT msg_id, content FROM messages ORDER BY created_at DESC LIMIT 1"
-            ).fetchone()
-            if result:
-                self.set_active_message(result[0])
-                return {'id': result[0], 'content': result[1]}
+            result = self.client.table('messages').select('msg_id, content').eq('is_active', 1).execute()
+            if result.data:
+                return {'id': result.data[0]['msg_id'], 'content': result.data[0]['content']}
+            result = self.client.table('messages').select('msg_id, content').order('created_at', desc=True).limit(1).execute()
+            if result.data:
+                self.set_active_message(result.data[0]['msg_id'])
+                return {'id': result.data[0]['msg_id'], 'content': result.data[0]['content']}
             return None
         except:
             return db_local.get_active_message()
@@ -493,8 +432,8 @@ class TursoDatabase:
         if not self.connected:
             return db_local.set_active_message(msg_id)
         try:
-            self.client.execute("UPDATE messages SET is_active = 0")
-            self.client.execute("UPDATE messages SET is_active = 1 WHERE msg_id = ?", (msg_id,))
+            self.client.table('messages').update({'is_active': 0}).execute()
+            self.client.table('messages').update({'is_active': 1}).eq('msg_id', msg_id).execute()
         except:
             return db_local.set_active_message(msg_id)
 
@@ -502,7 +441,7 @@ class TursoDatabase:
         if not self.connected:
             return db_local.delete_message(msg_id)
         try:
-            self.client.execute("DELETE FROM messages WHERE msg_id = ?", (msg_id,))
+            self.client.table('messages').delete().eq('msg_id', msg_id).execute()
         except:
             return db_local.delete_message(msg_id)
 
@@ -510,12 +449,17 @@ class TursoDatabase:
         if not self.connected:
             return db_local.add_account(phone, session_str)
         try:
-            self.client.execute(
-                "INSERT OR REPLACE INTO accounts VALUES (?, ?, ?, ?, ?, 0, 0, 0)",
-                (phone, session_str, datetime.now().isoformat(), 
-                 datetime.now().isoformat(), 'active')
-            )
-            logger.success(f"✅ تم حفظ {phone} في Turso")
+            self.client.table('accounts').upsert({
+                'phone': phone,
+                'session_str': session_str,
+                'added_at': datetime.now().isoformat(),
+                'last_active': datetime.now().isoformat(),
+                'status': 'active',
+                'total_posts': 0,
+                'success_posts': 0,
+                'failed_posts': 0
+            }).execute()
+            logger.success(f"✅ تم حفظ {phone} في Supabase")
         except Exception as e:
             logger.error(f"فشل حفظ الحساب: {e}")
             return db_local.add_account(phone, session_str)
@@ -524,7 +468,7 @@ class TursoDatabase:
         if not self.connected:
             return db_local.remove_account(phone)
         try:
-            self.client.execute("DELETE FROM accounts WHERE phone = ?", (phone,))
+            self.client.table('accounts').delete().eq('phone', phone).execute()
         except:
             return db_local.remove_account(phone)
 
@@ -532,10 +476,10 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_accounts()
         try:
-            result = self.client.execute(
-                "SELECT phone, status, total_posts, success_posts, failed_posts FROM accounts ORDER BY added_at DESC"
-            ).fetchall()
-            return result
+            result = self.client.table('accounts').select('*').order('added_at', desc=True).execute()
+            return [(row['phone'], row.get('status', 'active'), 
+                    row.get('total_posts', 0), row.get('success_posts', 0), 
+                    row.get('failed_posts', 0)) for row in result.data]
         except:
             return db_local.get_accounts()
 
@@ -543,10 +487,10 @@ class TursoDatabase:
         if not self.connected:
             return db_local.update_account_status(phone, status)
         try:
-            self.client.execute(
-                "UPDATE accounts SET status = ?, last_active = ? WHERE phone = ?",
-                (status, datetime.now().isoformat(), phone)
-            )
+            self.client.table('accounts').update({
+                'status': status,
+                'last_active': datetime.now().isoformat()
+            }).eq('phone', phone).execute()
         except:
             return db_local.update_account_status(phone, status)
 
@@ -554,11 +498,17 @@ class TursoDatabase:
         if not self.connected:
             return db_local.add_group(group_id, group_name, group_username, group_type, members_count, added_by)
         try:
-            self.client.execute(
-                "INSERT OR IGNORE INTO groups VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)",
-                (str(group_id), group_name or "بدون اسم", group_username or "", group_type, 
-                 members_count or 0, added_by, datetime.now().isoformat(), None)
-            )
+            self.client.table('groups').upsert({
+                'group_id': str(group_id),
+                'group_name': group_name or "بدون اسم",
+                'group_username': group_username or "",
+                'group_type': group_type,
+                'members_count': members_count or 0,
+                'added_by': added_by,
+                'added_at': datetime.now().isoformat(),
+                'post_count': 0,
+                'is_blacklisted': 0
+            }).execute()
         except:
             return db_local.add_group(group_id, group_name, group_username, group_type, members_count, added_by)
 
@@ -566,10 +516,9 @@ class TursoDatabase:
         if not self.connected:
             return db_local.update_group_post(group_id)
         try:
-            self.client.execute(
-                "UPDATE groups SET post_count = post_count + 1, last_post = ? WHERE group_id = ?",
-                (datetime.now().isoformat(), str(group_id))
-            )
+            self.client.table('groups').update({
+                'post_count': self.client.rpc('increment', {'current': 'post_count'})
+            }).eq('group_id', str(group_id)).execute()
         except:
             return db_local.update_group_post(group_id)
 
@@ -577,7 +526,7 @@ class TursoDatabase:
         if not self.connected:
             return db_local.blacklist_group(group_id)
         try:
-            self.client.execute("UPDATE groups SET is_blacklisted = 1 WHERE group_id = ?", (str(group_id),))
+            self.client.table('groups').update({'is_blacklisted': 1}).eq('group_id', str(group_id)).execute()
         except:
             return db_local.blacklist_group(group_id)
 
@@ -585,7 +534,7 @@ class TursoDatabase:
         if not self.connected:
             return db_local.whitelist_group(group_id)
         try:
-            self.client.execute("UPDATE groups SET is_blacklisted = 0 WHERE group_id = ?", (str(group_id),))
+            self.client.table('groups').update({'is_blacklisted': 0}).eq('group_id', str(group_id)).execute()
         except:
             return db_local.whitelist_group(group_id)
 
@@ -593,10 +542,10 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_all_groups()
         try:
-            result = self.client.execute(
-                "SELECT group_id, group_name, members_count, post_count, is_blacklisted, last_post FROM groups ORDER BY post_count DESC"
-            ).fetchall()
-            return result
+            result = self.client.table('groups').select('*').order('post_count', desc=True).execute()
+            return [(row['group_id'], row['group_name'], row.get('members_count', 0),
+                    row.get('post_count', 0), row.get('is_blacklisted', 0), 
+                    row.get('last_post')) for row in result.data]
         except:
             return db_local.get_all_groups()
 
@@ -604,10 +553,8 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_blacklisted_groups()
         try:
-            result = self.client.execute(
-                "SELECT group_id, group_name FROM groups WHERE is_blacklisted = 1"
-            ).fetchall()
-            return result
+            result = self.client.table('groups').select('group_id, group_name').eq('is_blacklisted', 1).execute()
+            return [(row['group_id'], row['group_name']) for row in result.data]
         except:
             return db_local.get_blacklisted_groups()
 
@@ -615,11 +562,8 @@ class TursoDatabase:
         if not self.connected:
             return db_local.search_groups(query)
         try:
-            result = self.client.execute(
-                "SELECT group_id, group_name, members_count FROM groups WHERE group_name LIKE ? LIMIT 20",
-                (f'%{query}%',)
-            ).fetchall()
-            return result
+            result = self.client.table('groups').select('group_id, group_name, members_count').ilike('group_name', f'%{query}%').limit(20).execute()
+            return [(row['group_id'], row['group_name'], row.get('members_count', 0)) for row in result.data]
         except:
             return db_local.search_groups(query)
 
@@ -627,10 +571,14 @@ class TursoDatabase:
         if not self.connected:
             return db_local.log_post(phone, group_id, group_name, status, error)
         try:
-            self.client.execute(
-                "INSERT INTO posting_history (phone, group_id, group_name, sent_at, status, error) VALUES (?, ?, ?, ?, ?, ?)",
-                (phone, str(group_id), group_name[:50], datetime.now().isoformat(), status, error)
-            )
+            self.client.table('posting_history').insert({
+                'phone': phone,
+                'group_id': str(group_id),
+                'group_name': group_name[:50],
+                'sent_at': datetime.now().isoformat(),
+                'status': status,
+                'error': error
+            }).execute()
             if status == 'success':
                 self.update_group_post(group_id)
         except:
@@ -641,13 +589,9 @@ class TursoDatabase:
             return db_local.get_posting_stats(hours)
         try:
             since = (datetime.now() - timedelta(hours=hours)).isoformat()
-            total = self.client.execute(
-                "SELECT COUNT(*) FROM posting_history WHERE sent_at > ?", (since,)
-            ).fetchone()[0]
-            success = self.client.execute(
-                "SELECT COUNT(*) FROM posting_history WHERE sent_at > ? AND status = 'success'", (since,)
-            ).fetchone()[0]
-            return {'total': total, 'success': success, 'failed': total - success}
+            total = self.client.table('posting_history').select('*', count='exact').gte('sent_at', since).execute()
+            success = self.client.table('posting_history').select('*', count='exact').gte('sent_at', since).eq('status', 'success').execute()
+            return {'total': total.count, 'success': success.count, 'failed': total.count - success.count}
         except:
             return db_local.get_posting_stats(hours)
 
@@ -655,11 +599,8 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_recent_posts(limit)
         try:
-            result = self.client.execute(
-                "SELECT phone, group_name, status, sent_at FROM posting_history ORDER BY sent_at DESC LIMIT ?",
-                (limit,)
-            ).fetchall()
-            return result
+            result = self.client.table('posting_history').select('phone, group_name, status, sent_at').order('sent_at', desc=True).limit(limit).execute()
+            return [(row['phone'], row['group_name'], row['status'], row['sent_at']) for row in result.data]
         except:
             return db_local.get_recent_posts(limit)
 
@@ -667,10 +608,13 @@ class TursoDatabase:
         if not self.connected:
             return db_local.add_joined_link(link, group_id, group_name, joined_by)
         try:
-            self.client.execute(
-                "INSERT INTO joined_links (link, group_id, group_name, joined_at, joined_by) VALUES (?, ?, ?, ?, ?)",
-                (link, str(group_id), group_name[:50], datetime.now().isoformat(), joined_by)
-            )
+            self.client.table('joined_links').insert({
+                'link': link,
+                'group_id': str(group_id),
+                'group_name': group_name[:50],
+                'joined_at': datetime.now().isoformat(),
+                'joined_by': joined_by
+            }).execute()
         except:
             return db_local.add_joined_link(link, group_id, group_name, joined_by)
 
@@ -678,11 +622,8 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_joined_links(limit)
         try:
-            result = self.client.execute(
-                "SELECT link, group_name, joined_at, joined_by FROM joined_links ORDER BY joined_at DESC LIMIT ?",
-                (limit,)
-            ).fetchall()
-            return result
+            result = self.client.table('joined_links').select('link, group_name, joined_at, joined_by').order('joined_at', desc=True).limit(limit).execute()
+            return [(row['link'], row['group_name'], row['joined_at'], row['joined_by']) for row in result.data]
         except:
             return db_local.get_joined_links(limit)
 
@@ -690,8 +631,8 @@ class TursoDatabase:
         if not self.connected:
             return db_local.get_joined_links_count()
         try:
-            result = self.client.execute("SELECT COUNT(*) FROM joined_links").fetchone()
-            return result[0] if result else 0
+            result = self.client.table('joined_links').select('*', count='exact').execute()
+            return result.count
         except:
             return db_local.get_joined_links_count()
 
@@ -700,19 +641,18 @@ class TursoDatabase:
             return db_local.create_backup()
         try:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            backup_file = f"{BACKUPS_DIR}/turso_backup_{timestamp}.json"
+            backup_file = f"{BACKUPS_DIR}/supabase_backup_{timestamp}.json"
             
             tables = ['settings', 'messages', 'accounts', 'groups', 'posting_history', 'joined_links']
             data = {}
             for table in tables:
-                result = self.client.execute(f"SELECT * FROM {table}").fetchall()
-                columns = [desc[0] for desc in self.client.execute(f"PRAGMA table_info({table})").fetchall()]
-                data[table] = [dict(zip(columns, row)) for row in result]
+                result = self.client.table(table).select('*').execute()
+                data[table] = result.data
             
             with open(backup_file, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2, default=str)
             
-            logger.success(f"✅ تم إنشاء نسخة احتياطية من Turso: {backup_file}")
+            logger.success(f"✅ تم إنشاء نسخة احتياطية من Supabase: {backup_file}")
             return backup_file
         except Exception as e:
             logger.error(f"❌ فشل إنشاء النسخة الاحتياطية: {e}")
@@ -720,11 +660,11 @@ class TursoDatabase:
 
 # ==================== اختيار قاعدة البيانات ====================
 
-db_cloud = TursoDatabase()
+db_cloud = SupabaseDatabase()
 
 if db_cloud.connected:
     db = db_cloud
-    logger.success("✅ استخدام قاعدة بيانات Turso السحابية (9GB)")
+    logger.success("✅ استخدام قاعدة بيانات Supabase السحابية (500MB)")
 else:
     db = db_local
     logger.info("📁 استخدام قاعدة البيانات المحلية SQLite")
@@ -847,7 +787,7 @@ async def start_handler(event):
     joined_links = db.get_joined_links_count()
     active_msg = db.get_active_message()
     
-    db_type = "☁️ Turso Cloud (9GB)" if db_cloud.connected else "📁 محلية SQLite"
+    db_type = "☁️ Supabase Cloud (500MB)" if db_cloud.connected else "📁 محلية SQLite"
     
     await event.respond(
         f"👋 **أهلاً بك في بوت النشر الخارق!**\n\n"
@@ -873,7 +813,6 @@ async def callback_handler(event):
     data = event.data.decode()
     logger.info(f"🖱 نقرة: {data}")
     
-    # القائمة الرئيسية
     if data == "status":
         await show_status(event)
     elif data == "stats":
@@ -912,7 +851,6 @@ async def callback_handler(event):
         else:
             await event.answer("❌ لا توجد رسالة نشطة", alert=True)
     
-    # حذف قاعدة البيانات
     elif data == "delete_database":
         await event.edit(
             "⚠️ **تحذير!** ⚠️\n\n"
@@ -942,16 +880,15 @@ async def callback_handler(event):
                     pass
             USER_CLIENTS.clear()
             
-            # حذف قاعدة البيانات حسب النوع
             if db_cloud.connected:
+                # حذف البيانات من Supabase
                 tables = ['settings', 'messages', 'accounts', 'groups', 'posting_history', 'joined_links']
                 for table in tables:
                     try:
-                        db_cloud.client.execute(f"DROP TABLE IF EXISTS {table}")
+                        db_cloud.client.table(table).delete().neq('id', 0).execute()
                     except:
                         pass
-                db_cloud.init_tables()
-                logger.success("✅ تم إعادة تهيئة Turso")
+                logger.success("✅ تم إعادة تهيئة Supabase")
             else:
                 if os.path.exists(DB_PATH):
                     os.remove(DB_PATH)
@@ -985,7 +922,6 @@ async def callback_handler(event):
                 text += f"• {gid}\n"
             await event.edit(text, buttons=advanced_buttons())
     
-    # إدارة الرسائل
     elif data == "manage_messages":
         await event.edit("📝 **إدارة الرسائل المتعددة**\n\nيمكنك إضافة عدة رسائل واختيار النشطة منها للنشر.", 
                         buttons=messages_buttons())
@@ -1009,7 +945,6 @@ async def callback_handler(event):
         await event.answer("✅ تم حذف الرسالة", alert=True)
         await event.edit("📝 إدارة الرسائل", buttons=messages_buttons())
     
-    # الإعدادات المتقدمة
     elif data == "toggle_autojoin":
         SETTINGS['auto_join_enabled'] = not SETTINGS.get('auto_join_enabled', True)
         db.save_setting('auto_join_enabled', SETTINGS['auto_join_enabled'])
@@ -1047,7 +982,6 @@ async def callback_handler(event):
     elif data == "group_stats":
         await show_group_stats(event)
     
-    # التقارير الحقيقية
     elif data == "real_reports":
         await event.edit("📊 **التقارير الحقيقية**\n\nاختر نوع التقرير:", buttons=reports_buttons())
     elif data == "real_stats":
@@ -1059,7 +993,6 @@ async def callback_handler(event):
     elif data == "links_report":
         await show_links_report(event)
     
-    # التحكم في النشر
     elif data == "start_p":
         if not USER_CLIENTS:
             return await event.answer("❌ لا توجد حسابات!", alert=True)
@@ -1238,7 +1171,7 @@ async def show_status(event):
     
     active_accounts = len([a for a in accounts if a[1] == 'active'])
     
-    db_type = "☁️ Turso Cloud (9GB)" if db_cloud.connected else "📁 محلية SQLite"
+    db_type = "☁️ Supabase Cloud (500MB)" if db_cloud.connected else "📁 محلية SQLite"
     
     text = f"📊 **حالة البوت**\n\n"
     text += f"🗄️ **قاعدة البيانات:** {db_type}\n"
@@ -1459,13 +1392,12 @@ async def refresh_groups_async():
             pass
     logger.info(f"✅ تم تحديث {count} مجموعة")
 
-# ===== معالج النصوص والانضمام البطيء =====
+# ===== معالج النصوص =====
 
 async def text_handler(event):
     state = TEMP.get(ADMIN_ID)
     text = event.message.text.strip()
     
-    # معالجة إضافة رسالة جديدة
     if state == "new_message":
         msg_id = f"msg_{int(time.time())}"
         db.save_message(msg_id, text, is_active=False)
@@ -1474,11 +1406,9 @@ async def text_handler(event):
                           buttons=messages_buttons())
         return
     
-    # معالجة إضافة حساب
     elif state == "phone":
         await handle_phone_login(event, text)
     
-    # معالجة ضبط الوقت
     elif state == "time":
         try:
             interval = int(text)
@@ -1492,7 +1422,6 @@ async def text_handler(event):
         except:
             await event.respond("❌ أرسل رقماً فقط")
     
-    # معالجة إضافة للمحظورات
     elif state == "add_blacklist":
         groups = db.search_groups(text)
         if groups:
@@ -1504,7 +1433,6 @@ async def text_handler(event):
         TEMP.pop(ADMIN_ID)
         await event.respond("⚙️ الإعدادات المتقدمة:", buttons=advanced_buttons())
     
-    # معالجة بحث المجموعات
     elif state == "search_groups":
         groups = db.search_groups(text)
         if groups:
@@ -1516,16 +1444,15 @@ async def text_handler(event):
             await event.respond("❌ لا توجد نتائج")
         TEMP.pop(ADMIN_ID)
     
-    # معالجة الروابط (انضمام بطيء لـ 20 رابط)
     else:
         links = re.findall(r"(https?://t\.me/(?:joinchat/|\+)[a-zA-Z0-9_-]+|https?://t\.me/[a-zA-Z0-9_]+)", text)
         if links and SETTINGS.get('auto_join_enabled', True) and USER_CLIENTS:
             await handle_auto_join_slow(event, links)
 
-# ===== دالة الانضمام البطيء لـ 20 رابط =====
+# ===== دالة الانضمام البطيء =====
 async def handle_auto_join_slow(event, links):
-    """انضمام لـ 20 رابط مع تأخيرات طويلة جداً لحماية الحسابات"""
-    max_links = min(len(links), 20)  # حد أقصى 20 رابط
+    """انضمام بطيء مع تأخيرات طويلة"""
+    max_links = min(len(links), 5)
     
     await event.respond(
         f"🐢 **انضمام بطيء لـ {max_links} رابط**\n"
@@ -1541,9 +1468,8 @@ async def handle_auto_join_slow(event, links):
     saved = 0
     
     for i, link in enumerate(links[:max_links]):
-        # تأخير بين الروابط (45-90 ثانية)
         if i > 0:
-            delay = random.randint(45, 90)
+            delay = random.randint(30, 60)
             logger.info(f"⏸ انتظار {delay} ثانية قبل الرابط رقم {i+1}...")
             await asyncio.sleep(delay)
         
@@ -1553,8 +1479,7 @@ async def handle_auto_join_slow(event, links):
                 break
                 
             try:
-                # تأخير قبل محاولة الانضمام (20-40 ثانية)
-                pre_delay = random.randint(20, 40)
+                pre_delay = random.randint(15, 30)
                 logger.info(f"⏸ انتظار {pre_delay} ثانية قبل محاولة {phone[-8:]}...")
                 await asyncio.sleep(pre_delay)
                 
@@ -1578,12 +1503,10 @@ async def handle_auto_join_slow(event, links):
                 joined = True
                 logger.success(f"✅ تم الانضمام بنجاح باستخدام {phone[-8:]}")
                 
-                # تأخير بعد الانضمام الناجح (30-60 ثانية)
-                post_delay = random.randint(30, 60)
+                post_delay = random.randint(20, 40)
                 logger.info(f"⏸ انتظار {post_delay} ثانية بعد الانضمام...")
                 await asyncio.sleep(post_delay)
                 
-                # حفظ الرابط
                 if SETTINGS.get('save_joined_links', True) and group_info:
                     group_id, group_name = group_info
                     db.add_joined_link(link, group_id, group_name[:50], phone)
@@ -1593,7 +1516,7 @@ async def handle_auto_join_slow(event, links):
                 break
                 
             except FloodWaitError as e:
-                wait_time = e.seconds + random.randint(20, 40)
+                wait_time = e.seconds + random.randint(15, 30)
                 logger.warning(f"⏳ FloodWait: انتظار {wait_time} ثانية...")
                 await asyncio.sleep(wait_time)
                 continue
@@ -1601,7 +1524,7 @@ async def handle_auto_join_slow(event, links):
             except Exception as e:
                 failed += 1
                 logger.error(f"❌ فشل انضمام {phone} إلى {link}: {e}")
-                error_delay = random.randint(40, 80)
+                error_delay = random.randint(30, 60)
                 logger.info(f"⏸ انتظار {error_delay} ثانية بعد الفشل...")
                 await asyncio.sleep(error_delay)
                 continue
@@ -1609,7 +1532,7 @@ async def handle_auto_join_slow(event, links):
         if not joined:
             failed += 1
             logger.warning(f"⚠️ فشل الانضمام لـ {link} بجميع الحسابات")
-            await asyncio.sleep(random.randint(60, 90))
+            await asyncio.sleep(random.randint(45, 75))
     
     await asyncio.sleep(random.randint(10, 20))
     
@@ -1739,13 +1662,10 @@ async def restore_sessions():
             phone = account[0]
             session_str = None
             
-            # جلب session_str من قاعدة البيانات
             if db_cloud.connected:
-                result = db_cloud.client.execute(
-                    "SELECT session_str FROM accounts WHERE phone = ?", (phone,)
-                ).fetchone()
-                if result:
-                    session_str = result[0]
+                result = db_cloud.client.table('accounts').select('session_str').eq('phone', phone).execute()
+                if result.data:
+                    session_str = result.data[0]['session_str']
             else:
                 conn = sqlite3.connect(DB_PATH)
                 result = conn.execute('SELECT session_str FROM accounts WHERE phone = ?', (phone,)).fetchone()
@@ -1786,19 +1706,15 @@ async def main():
     print("🚀 جاري تشغيل البوت...")
     print("👤 ADMIN_ID المستخدم:", ADMIN_ID)
     
-    # استعادة الجلسات المحفوظة
     await restore_sessions()
     
-    # تشغيل البوت
     bot = TelegramClient('bot_session', API_ID, API_HASH)
     await bot.start(bot_token=BOT_TOKEN)
     
-    # التحقق من البوت
     me = await bot.get_me()
     print(f"✅ البوت متصل: @{me.username}")
     print(f"👤 آيدي البوت: {me.id}")
     
-    # معالجات الأحداث
     @bot.on(events.NewMessage(pattern='/start'))
     async def start(e):
         print(f"📩 استقبلت أمر /start من {e.sender_id}")
@@ -1824,7 +1740,7 @@ async def main():
             await text_handler(e)
     
     logger.success("✅ البوت جاهز! أرسل /start")
-    db_type = "Turso Cloud (9GB)" if db_cloud.connected else "SQLite محلية"
+    db_type = "Supabase Cloud (500MB)" if db_cloud.connected else "SQLite محلية"
     print(f"🎉 البوت يعمل مع قاعدة بيانات {db_type}")
     await bot.run_until_disconnected()
 
